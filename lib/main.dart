@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 
-void main() => runApp(const EnglishPlease());
+
+import 'package:flutter/services.dart';
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  runApp(const EnglishPlease());
+}
 
 class EnglishPlease extends StatelessWidget {
   const EnglishPlease({super.key});
