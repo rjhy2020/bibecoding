@@ -512,13 +512,131 @@ class LearnPage extends StatelessWidget {
   }
 }
 
-class SpeakingPage extends StatelessWidget {
+class SpeakingPage extends StatefulWidget {
   const SpeakingPage({super.key});
   @override
+  State<SpeakingPage> createState() => _SpeakingPageState();
+}
+
+class _SpeakingPageState extends State<SpeakingPage> {
+  final List<_Msg> _messages = <_Msg>[
+    _Msg(text: '안녕하세요! 표현을 알려드릴게요 😊', mine: false),
+  ];
+  final TextEditingController _inputCtrl = TextEditingController();
+  final ScrollController _scroll = ScrollController();
+
+  void _send() {
+    final t = _inputCtrl.text.trim();
+    if (t.isEmpty) return;
+    setState(() {
+      _messages.add(_Msg(text: t, mine: true));
+      _messages.add(_Msg(text: '예문과 함께 연습문장을 만들어드릴게요!', mine: false));
+    });
+    _inputCtrl.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return const _PlaceholderScaffold(title: '스피킹');
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+
+    return Scaffold(
+      resizeToAvoidBottomInset: true,
+      appBar: AppBar(title: const Text('채팅')), 
+      body: Column(
+        children: [
+          // messages
+          Expanded(
+            child: ListView.builder(
+              controller: _scroll,
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              itemCount: _messages.length,
+              itemBuilder: (context, i) {
+                final m = _messages[i];
+                return Align(
+                  alignment: m.mine ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                    decoration: BoxDecoration(
+                      color: m.mine ? cs.primaryContainer : cs.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: cs.outlineVariant.withOpacity(0.25)),
+                    ),
+                    child: Text(m.text, style: tt.bodyMedium?.copyWith(color: m.mine ? cs.onPrimaryContainer : cs.onSurface)),
+                  ),
+                );
+              },
+            ),
+          ),
+          // input bar
+          AnimatedPadding(
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+            padding: EdgeInsets.only(bottom: viewInsets),
+            child: SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                decoration: BoxDecoration(
+                  color: cs.surface,
+                  border: Border(top: BorderSide(color: cs.outlineVariant.withOpacity(0.25))),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 44, maxHeight: 140),
+                        child: Scrollbar(
+                          child: TextField(
+                            controller: _inputCtrl,
+                            minLines: 1,
+                            maxLines: 5,
+                            textInputAction: TextInputAction.newline,
+                            decoration: InputDecoration(
+                              hintText: '메시지를 입력하세요',
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      height: 44,
+                      width: 44,
+                      child: FilledButton(
+                        onPressed: _send,
+                        child: const Icon(Icons.send, size: 18),
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
+
+class _Msg { final String text; final bool mine; const _Msg({required this.text, required this.mine}); }
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
