@@ -66,6 +66,7 @@ class _MainNavState extends State<MainNav> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       body: SafeArea(child: _pages[_index]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -117,8 +118,17 @@ class _HomePageState extends State<HomePage> {
         final isNarrow = constraints.maxWidth < 640;
         final kpiTwoColumn = constraints.maxWidth < 520;
 
+        final mq = MediaQuery.of(context);
+
+
+        final bottomInsets = mq.viewInsets.bottom;
+
+
+        final safeBottom = mq.padding.bottom;
         return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(kGap16, kGap16, kGap16, kGap24),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+
+          padding: EdgeInsets.fromLTRB(kGap16, kGap16, kGap16, kGap24 + safeBottom + bottomInsets),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -318,9 +328,9 @@ class _HomePageState extends State<HomePage> {
               // 5) Recent phrases
               Text('최근 학습한 표현', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 20)),
               const SizedBox(height: kGap12),
-              ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 120, maxHeight: 220),
-                child: ListView.separated(
+              ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
                   itemCount: _recent.length,
                   separatorBuilder: (_, __) => const SizedBox(height: kGap8),
                   itemBuilder: (context, i) {
@@ -328,7 +338,6 @@ class _HomePageState extends State<HomePage> {
                     return RecentPhraseTile(phrase: item);
                   },
                 ),
-              ),
             ],
           ),
         );
