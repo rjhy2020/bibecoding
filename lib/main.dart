@@ -1,16 +1,12 @@
 import 'package:flutter/material.dart';
-
-
 import 'package:flutter/services.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const EnglishPlease());
 }
-
 class EnglishPlease extends StatelessWidget {
   const EnglishPlease({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -25,7 +21,6 @@ class EnglishPlease extends StatelessWidget {
     );
   }
 }
-
 /* ============================== Constants ============================== */
 const double kGap4 = 4.0;
 const double kGap8 = 8.0;
@@ -35,7 +30,6 @@ const double kGap20 = 20.0;
 const double kGap24 = 24.0;
 const double kRadius16 = 16.0;
 const double kRadius20 = 20.0;
-
 /* ============================== Data Models ============================== */
 class RecentPhrase {
   final String text;
@@ -43,25 +37,20 @@ class RecentPhrase {
   final String difficulty;
   const RecentPhrase({required this.text, required this.meaning, required this.difficulty});
 }
-
 /* ============================== Navigation Shell ============================== */
 class MainNav extends StatefulWidget {
   const MainNav({super.key});
-
   @override
   State<MainNav> createState() => _MainNavState();
 }
-
 class _MainNavState extends State<MainNav> {
   int _index = 0;
-
   final _pages = const [
     HomePage(),
     LearnPage(),
     SpeakingPage(),
     ProfilePage(),
   ];
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -82,23 +71,18 @@ class _MainNavState extends State<MainNav> {
     );
   }
 }
-
 /* ============================== Home Page ============================== */
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
-
   @override
   State<HomePage> createState() => _HomePageState();
 }
-
 class _HomePageState extends State<HomePage> {
   final TextEditingController _searchCtrl = TextEditingController();
-
   final _recent = const [
     RecentPhrase(text: "I'm over the moon", meaning: "매우 기뻤다", difficulty: "쉬움"),
     RecentPhrase(text: "Break a leg", meaning: "행운을 빌어!", difficulty: "보통"),
   ];
-
   void _onSearch() {
     final q = _searchCtrl.text.trim();
     // Behavior: print query to console
@@ -107,21 +91,17 @@ class _HomePageState extends State<HomePage> {
     if (q.isEmpty) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('검색: $q')));
   }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final isNarrow = constraints.maxWidth < 640;
         final kpiTwoColumn = constraints.maxWidth < 520;
-
         final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
         return SingleChildScrollView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-
           padding: EdgeInsets.fromLTRB(kGap16, kGap16, kGap16, kGap24 + viewInsetsBottom),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -137,7 +117,6 @@ class _HomePageState extends State<HomePage> {
                 style: text.headlineSmall?.copyWith(fontSize: 24, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: kGap16),
-
               // 2) Purple gradient hero card
               Container(
                 padding: const EdgeInsets.all(kGap20),
@@ -220,7 +199,6 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const SizedBox(height: kGap20),
-
               // 3) KPI row (responsive)
               if (!kpiTwoColumn)
                 Row(
@@ -271,11 +249,9 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               const SizedBox(height: kGap20),
-
               // 4) "빠른 학습" + action cards (responsive)
               Text('빠른 학습', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 20)),
               const SizedBox(height: kGap12),
-
               if (isNarrow)
                 SizedBox(
                   height: 130,
@@ -321,7 +297,6 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
               const SizedBox(height: kGap20),
-
               // 5) Recent phrases
               Text('최근 학습한 표현', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 20)),
               const SizedBox(height: kGap12),
@@ -342,19 +317,16 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
-
 /* ============================== Small Widgets ============================== */
 class MetricCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String value;
   const MetricCard({super.key, required this.icon, required this.title, required this.value});
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-
     return Container(
       height: 88,
       padding: const EdgeInsets.all(kGap16),
@@ -386,7 +358,6 @@ class MetricCard extends StatelessWidget {
     );
   }
 }
-
 class QuickActionCard extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -399,12 +370,10 @@ class QuickActionCard extends StatelessWidget {
     required this.caption,
     required this.onTap,
   });
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-
     return SizedBox(
       width: 280,
       height: 120,
@@ -455,16 +424,13 @@ class QuickActionCard extends StatelessWidget {
     );
   }
 }
-
 class RecentPhraseTile extends StatelessWidget {
   final RecentPhrase phrase;
   const RecentPhraseTile({super.key, required this.phrase});
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-
     return Material(
       color: cs.surface,
       borderRadius: BorderRadius.circular(kRadius16),
@@ -499,7 +465,6 @@ class RecentPhraseTile extends StatelessWidget {
     );
   }
 }
-
 /* ============================== Placeholder Pages ============================== */
 class LearnPage extends StatelessWidget {
   const LearnPage({super.key});
@@ -508,20 +473,17 @@ class LearnPage extends StatelessWidget {
     return const _PlaceholderScaffold(title: '학습');
   }
 }
-
 class SpeakingPage extends StatefulWidget {
   const SpeakingPage({super.key});
   @override
   State<SpeakingPage> createState() => _SpeakingPageState();
 }
-
 class _SpeakingPageState extends State<SpeakingPage> {
   final List<_Msg> _messages = <_Msg>[
     _Msg(text: '안녕하세요! 표현을 알려드릴게요 😊', mine: false),
   ];
   final TextEditingController _inputCtrl = TextEditingController();
   final ScrollController _scroll = ScrollController();
-
   void _send() {
     final t = _inputCtrl.text.trim();
     if (t.isEmpty) return;
@@ -540,13 +502,11 @@ class _SpeakingPageState extends State<SpeakingPage> {
       }
     });
   }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-
     return Scaffold(
       resizeToAvoidBottomInset: true,
       appBar: AppBar(title: const Text('채팅')), 
@@ -608,10 +568,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
                           ),
                         ),
                       ),
-                          ),
-                        ),
                       ),
-                    ),
                     const SizedBox(width: 8),
                     SizedBox(
                       height: 48,
@@ -631,9 +588,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
     );
   }
 }
-
 class _Msg { final String text; final bool mine; const _Msg({required this.text, required this.mine}); }
-
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
   @override
@@ -641,11 +596,9 @@ class ProfilePage extends StatelessWidget {
     return const _PlaceholderScaffold(title: '프로필');
   }
 }
-
 class _PlaceholderScaffold extends StatelessWidget {
   final String title;
   const _PlaceholderScaffold({required this.title});
-
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
