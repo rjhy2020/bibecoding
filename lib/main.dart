@@ -118,17 +118,11 @@ class _HomePageState extends State<HomePage> {
         final isNarrow = constraints.maxWidth < 640;
         final kpiTwoColumn = constraints.maxWidth < 520;
 
-        final mq = MediaQuery.of(context);
-
-
-        final bottomInsets = mq.viewInsets.bottom;
-
-
-        final safeBottom = mq.padding.bottom;
+        final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
         return SingleChildScrollView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
 
-          padding: EdgeInsets.fromLTRB(kGap16, kGap16, kGap16, kGap24 + safeBottom + bottomInsets),
+          padding: EdgeInsets.fromLTRB(kGap16, kGap16, kGap16, kGap24 + viewInsetsBottom),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -146,7 +140,6 @@ class _HomePageState extends State<HomePage> {
 
               // 2) Purple gradient hero card
               Container(
-                height: 120,
                 padding: const EdgeInsets.all(kGap20),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(kRadius20),
@@ -178,16 +171,20 @@ class _HomePageState extends State<HomePage> {
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
+                          child: SizedBox(
+                            height: 48,
+                            child: TextField(
                             controller: _searchCtrl,
                             onSubmitted: (_) => _onSearch(),
+                              textInputAction: TextInputAction.search,
+                              maxLines: 1,
                             decoration: InputDecoration(
                               isDense: true,
                               prefixIcon: const Icon(Icons.search),
                               hintText: "예: '화가 날 때' 표현을 알고 싶어요",
                               filled: true,
                               fillColor: Colors.white,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(16),
                                 borderSide: BorderSide(color: Colors.black.withOpacity(0.08)),
@@ -204,13 +201,13 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                         const SizedBox(width: kGap8),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                        SizedBox(
+                          height: 48,
                           child: FilledButton(
                             style: FilledButton.styleFrom(
                               backgroundColor: Colors.white,
                               foregroundColor: cs.primary,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                             onPressed: _onSearch,
@@ -596,30 +593,29 @@ class _SpeakingPageState extends State<SpeakingPage> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(minHeight: 44, maxHeight: 140),
-                        child: Scrollbar(
-                          child: TextField(
-                            controller: _inputCtrl,
-                            minLines: 1,
-                            maxLines: 5,
-                            textInputAction: TextInputAction.newline,
-                            decoration: InputDecoration(
-                              hintText: '메시지를 입력하세요',
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
+                      child: SizedBox(
+                        height: 48,
+                        child: TextField(
+                          controller: _inputCtrl,
+                          maxLines: 1,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _send(),
+                          decoration: InputDecoration(
+                            hintText: '메시지를 입력하세요',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
                           ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     SizedBox(
-                      height: 44,
-                      width: 44,
+                      height: 48,
+                      width: 48,
                       child: FilledButton(
                         onPressed: _send,
                         child: const Icon(Icons.send, size: 18),
