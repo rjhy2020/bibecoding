@@ -417,7 +417,8 @@ class QuickActionCard extends StatelessWidget {
       width: 280,
       height: 120,
       child: Material(
-        color: cs.surface,
+        // Lighten card in light mode to match other buttons
+        color: Theme.of(context).brightness == Brightness.dark ? cs.surface : Colors.white,
         borderRadius: BorderRadius.circular(kRadius20),
         elevation: 0,
         child: InkWell(
