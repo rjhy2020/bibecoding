@@ -6,6 +6,10 @@ EnglishPlease is an LLM‑powered English learning app. Users ask for an express
 ## How to access Windows
 Use /mnt
 
+## Git
+git@github.com:rjhy2020/bibecoding.git
+When you do a task and commit it, make sure the title is in Korean.
+
 ## Project Structure & Module Organization
 - `lib/`: app code (pages, widgets, services, models)
 - `test/`: unit/widget tests (`*_test.dart`)

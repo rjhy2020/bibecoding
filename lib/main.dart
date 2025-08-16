@@ -19,6 +19,11 @@ class EnglishPlease extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF5B8DEF)),
+        // Flutter 최신: CardThemeData 사용 + 표면 틴트 제거(어둑함 방지)
+        cardTheme: const CardThemeData(
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+        ),
       ),
       home: const MainNav(),
     );
@@ -63,9 +68,8 @@ class _MainNavState extends State<MainNav> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      resizeToAvoidBottomInset: true,
-      // ❌ 기존: SafeArea(child: _pages[_index]) → 내부 페이지가 Scaffold(AppBar 포함)일 때 상단 여백이 겹침
-      // ✅ 수정: 각 페이지가 자체적으로 SafeArea/Insets를 책임지도록 함
+      // ✅ FIX: 전역 자동 리사이즈 비활성화. 각 페이지가 직접 insets 처리.
+      resizeToAvoidBottomInset: false,
       body: _pages[_index],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -98,16 +102,14 @@ class _HomePageState extends State<HomePage> {
 
   void _onSearch() {
     final q = _searchCtrl.text.trim();
-    FocusScope.of(context).unfocus(); // 키보드 닫기
-    // ignore: avoid_print
-    print('Search query: $q');
+    FocusScope.of(context).unfocus();
     if (q.isEmpty) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('검색: $q')));
   }
 
   @override
   void dispose() {
-    _searchCtrl.dispose(); // ✅ 메모리 누수 방지
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -116,7 +118,7 @@ class _HomePageState extends State<HomePage> {
     final cs = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
-    return SafeArea( // ✅ 상단 노치/시스템 영역 보호 (HomePage만 적용)
+    return SafeArea(
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isNarrow = constraints.maxWidth < 640;
@@ -124,6 +126,7 @@ class _HomePageState extends State<HomePage> {
           final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
 
           return SingleChildScrollView(
+            // ✅ 스크롤 화면이므로 insets를 패딩으로만 더해도 overflow 없음
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: EdgeInsets.fromLTRB(kGap16, kGap16, kGap16, kGap24 + viewInsetsBottom),
             child: Column(
@@ -174,8 +177,6 @@ class _HomePageState extends State<HomePage> {
                         '자연스러운 원어민 표현을 알려드릴게요!',
                         style: text.bodyMedium?.copyWith(color: Colors.white.withOpacity(0.95)),
                       ),
-                      // ❌ const Spacer() → ScrollView 안의 Column은 높이가 무한(미정)이라 Flexible/Spacer 사용 시 예외 발생
-                      // ✅ 아래처럼 고정 간격으로 대체
                       const SizedBox(height: kGap12),
                       Row(
                         children: [
@@ -262,19 +263,6 @@ class _HomePageState extends State<HomePage> {
                     ],
                   )
                 else
-                // 2x2 느낌 (narrow): Wrap with 2 columns
-                  Wrap(
-                    spacing: kGap12,
-                    runSpacing: kGap12,
-                    children: const [
-                      SizedBox(
-                        width: double.nan, // placeholder; will be replaced below in LayoutBuilder
-                      ),
-                    ],
-                  ),
-
-                if (kpiTwoColumn) ...[
-                  // width 계산은 LayoutBuilder 내에서 수행
                   Wrap(
                     spacing: kGap12,
                     runSpacing: kGap12,
@@ -293,7 +281,6 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ],
                   ),
-                ],
 
                 const SizedBox(height: kGap20),
 
@@ -413,26 +400,33 @@ class QuickActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final bool light = Theme.of(context).brightness == Brightness.light;
+
     return SizedBox(
       width: 280,
       height: 120,
-      child: Material(
-        // Lighten card in light mode to match other buttons
-        color: Theme.of(context).brightness == Brightness.dark ? cs.surface : Colors.white,
-        borderRadius: BorderRadius.circular(kRadius20),
+      child: Card(
+        // 라이트: 흰색 / 다크: surface
+        color: light ? Colors.white : cs.surface,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(kRadius20),
+          side: BorderSide(color: cs.outlineVariant.withOpacity(0.25)),
+        ),
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
           borderRadius: BorderRadius.circular(kRadius20),
+          overlayColor: MaterialStateProperty.resolveWith<Color?>((states) {
+            if (states.contains(MaterialState.pressed)) return cs.primary.withOpacity(0.08);
+            if (states.contains(MaterialState.hovered) || states.contains(MaterialState.focused)) {
+              return cs.primary.withOpacity(0.04);
+            }
+            return Colors.transparent;
+          }),
           onTap: onTap,
-          child: Container(
+          child: Padding(
             padding: const EdgeInsets.all(kGap16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(kRadius20),
-              border: Border.all(color: cs.outlineVariant.withOpacity(0.25)),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4)),
-              ],
-            ),
             child: Row(
               children: [
                 Container(
@@ -548,8 +542,8 @@ class _SpeakingPageState extends State<SpeakingPage> {
 
   @override
   void dispose() {
-    _inputCtrl.dispose(); // ✅ 메모리 누수 방지
-    _scroll.dispose(); // ✅ 컨트롤러 해제
+    _inputCtrl.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -558,8 +552,10 @@ class _SpeakingPageState extends State<SpeakingPage> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+
     return Scaffold(
-      resizeToAvoidBottomInset: true,
+      // ✅ FIX: 여기서도 자동 리사이즈 끔. 아래 AnimatedPadding만으로 처리.
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(title: const Text('채팅')),
       body: Column(
         children: [
@@ -594,6 +590,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
           ),
           // input bar
           AnimatedPadding(
+            // ✅ 창 줄이거나 키보드 올라올 때 overflow 없이 위로 안전하게 올림
             duration: const Duration(milliseconds: 150),
             curve: Curves.easeOut,
             padding: EdgeInsets.only(bottom: viewInsets),
