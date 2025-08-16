@@ -496,12 +496,6 @@ class RecentPhraseTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: kGap12),
-              Chip(
-                label: Text(phrase.difficulty, style: tt.labelMedium),
-                side: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
-                backgroundColor: cs.surfaceVariant.withOpacity(0.4),
-              ),
             ],
           ),
         ),
