@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'features/chat/chat_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,7 +26,7 @@ class EnglishPlease extends StatelessWidget {
           elevation: 0,
         ),
       ),
-      home: const MainNav(),
+      home: const HomePage(),
     );
   }
 }
@@ -48,44 +49,6 @@ class RecentPhrase {
   const RecentPhrase({required this.text, required this.meaning, required this.difficulty});
 }
 
-/* ============================== Navigation Shell ============================== */
-class MainNav extends StatefulWidget {
-  const MainNav({super.key});
-  @override
-  State<MainNav> createState() => _MainNavState();
-}
-
-class _MainNavState extends State<MainNav> {
-  int _index = 0;
-  final _pages = const [
-    HomePage(),
-    LearnPage(),
-    SpeakingPage(),
-    ProfilePage(),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Scaffold(
-      // ✅ FIX: 전역 자동 리사이즈 비활성화. 각 페이지가 직접 insets 처리.
-      resizeToAvoidBottomInset: false,
-      body: _pages[_index],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home), label: '집'),
-          NavigationDestination(icon: Icon(Icons.menu_book), label: '학습'),
-          NavigationDestination(icon: Icon(Icons.mic), label: '스피킹'),
-          NavigationDestination(icon: Icon(Icons.person), label: '프로필'),
-        ],
-        indicatorColor: cs.primaryContainer.withOpacity(0.4),
-      ),
-    );
-  }
-}
-
 /* ============================== Home Page ============================== */
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -104,7 +67,12 @@ class _HomePageState extends State<HomePage> {
     final q = _searchCtrl.text.trim();
     FocusScope.of(context).unfocus();
     if (q.isEmpty) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('검색: $q')));
+    // 채팅으로 이동 후 홈 입력창은 초기화
+    _searchCtrl.clear();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ChatPage(initialQuery: q)),
+    );
   }
 
   @override
@@ -118,223 +86,280 @@ class _HomePageState extends State<HomePage> {
     final cs = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
-    return SafeArea(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isNarrow = constraints.maxWidth < 640;
-          final kpiTwoColumn = constraints.maxWidth < 520;
-          final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
+    return Scaffold( // ✅ 핵심 수정: Scaffold 추가
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isNarrow = constraints.maxWidth < 640;
+            final kpiTwoColumn = constraints.maxWidth < 520;
+            final isTiny = constraints.maxWidth < 380;
 
-          return SingleChildScrollView(
-            // ✅ 스크롤 화면이므로 insets를 패딩으로만 더해도 overflow 없음
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: EdgeInsets.fromLTRB(kGap16, kGap16, kGap16, kGap24 + viewInsetsBottom),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 1) Top greeting
-                Text(
-                  '안녕하세요! 👋',
-                  style: text.bodySmall?.copyWith(fontSize: 14, fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: kGap8),
-                Text(
-                  '오늘도 영어 공부해볼까요?',
-                  style: text.headlineSmall?.copyWith(fontSize: 24, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: kGap16),
-
-                // 2) Purple gradient hero card
-                Container(
-                  padding: const EdgeInsets.all(kGap20),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(kRadius20),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF6A4DF5), Color(0xFF8A63FF)],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.10),
-                        blurRadius: 14,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
+            return SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(kGap16, kGap16, kGap16, kGap24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1) Top greeting
+                  Text(
+                    '안녕하세요! 👋',
+                    style: text.bodySmall?.copyWith(fontSize: 14, fontWeight: FontWeight.w500),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '궁금한 영어 표현이 있나요?',
-                        style: text.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: kGap4),
-                      Text(
-                        '자연스러운 원어민 표현을 알려드릴게요!',
-                        style: text.bodyMedium?.copyWith(color: Colors.white.withOpacity(0.95)),
-                      ),
-                      const SizedBox(height: kGap12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SizedBox(
-                              height: 48,
-                              child: TextField(
-                                controller: _searchCtrl,
-                                onSubmitted: (_) => _onSearch(),
-                                textInputAction: TextInputAction.search,
-                                maxLines: 1,
-                                decoration: InputDecoration(
-                                  isDense: true,
-                                  prefixIcon: const Icon(Icons.search),
-                                  hintText: "예: '화가 날 때' 표현을 알고 싶어요",
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                    borderSide: BorderSide(color: Colors.black.withOpacity(0.08)),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                    borderSide: BorderSide(color: Colors.black.withOpacity(0.08)),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                    borderSide: BorderSide(color: Colors.white.withOpacity(0.9), width: 1.4),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: kGap8),
-                          SizedBox(
-                            height: 48,
-                            child: FilledButton(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: cs.primary,
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: _onSearch,
-                              child: const Text('검색'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                  const SizedBox(height: kGap8),
+                  Text(
+                    '오늘도 영어 공부해볼까요?',
+                    style: text.headlineSmall?.copyWith(fontSize: 24, fontWeight: FontWeight.w600),
                   ),
-                ),
+                  const SizedBox(height: kGap16),
 
-                const SizedBox(height: kGap20),
-
-                // 3) KPI row (responsive)
-                if (!kpiTwoColumn)
-                  Row(
-                    children: const [
-                      Expanded(
-                        child: MetricCard(
-                          icon: Icons.trending_up,
-                          title: '학습 연속일',
-                          value: '7일',
-                        ),
+                  // 2) Purple gradient hero card
+                  Container(
+                    padding: const EdgeInsets.all(kGap20),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(kRadius20),
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF6A4DF5), Color(0xFF8A63FF)],
                       ),
-                      SizedBox(width: kGap12),
-                      Expanded(
-                        child: MetricCard(
-                          icon: Icons.sticky_note_2,
-                          title: '복습 대기',
-                          value: '12개',
-                        ),
-                      ),
-                      SizedBox(width: kGap12),
-                      Expanded(
-                        child: MetricCard(
-                          icon: Icons.mic,
-                          title: '지금까지 연습한 문장',
-                          value: '24개',
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  Wrap(
-                    spacing: kGap12,
-                    runSpacing: kGap12,
-                    children: [
-                      SizedBox(
-                        width: (constraints.maxWidth - kGap12) / 2,
-                        child: const MetricCard(icon: Icons.trending_up, title: '학습 연속일', value: '7일'),
-                      ),
-                      SizedBox(
-                        width: (constraints.maxWidth - kGap12) / 2,
-                        child: const MetricCard(icon: Icons.sticky_note_2, title: '복습 대기', value: '12개'),
-                      ),
-                      SizedBox(
-                        width: (constraints.maxWidth - kGap12) / 2,
-                        child: const MetricCard(icon: Icons.mic, title: '지금까지 연습한 문장', value: '24개'),
-                      ),
-                    ],
-                  ),
-
-                const SizedBox(height: kGap20),
-
-                // 4) "빠른 복습" + action cards (responsive)
-                Text('빠른 복습', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 20)),
-                const SizedBox(height: kGap12),
-                if (isNarrow)
-                  SizedBox(
-                    height: 130,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: [
-                        QuickActionCard(
-                          icon: Icons.autorenew,
-                          title: '복습하기',
-                          caption: '12개 대기중',
-                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LearnPage())),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.10),
+                          blurRadius: 14,
+                          offset: const Offset(0, 6),
                         ),
                       ],
                     ),
-                  )
-                else
-                  Row(
-                    children: [
-                      Expanded(
-                        child: QuickActionCard(
-                          icon: Icons.autorenew,
-                          title: '복습하기',
-                          caption: '12개 대기중',
-                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LearnPage())),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '궁금한 영어 표현이 있나요?',
+                          style: text.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: kGap4),
+                        Text(
+                          '자연스러운 원어민 표현을 알려드릴게요!',
+                          style: text.bodyMedium?.copyWith(color: Colors.white.withOpacity(0.95)),
+                        ),
+                        const SizedBox(height: kGap12),
+                        if (isTiny)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              SizedBox(
+                                height: 48,
+                                child: TextField(
+                                  controller: _searchCtrl,
+                                  onSubmitted: (_) => _onSearch(),
+                                  textInputAction: TextInputAction.search,
+                                  maxLines: 1,
+                                  autocorrect: false,
+                                  enableSuggestions: false,
+                                  textCapitalization: TextCapitalization.none,
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    prefixIcon: const Icon(Icons.search),
+                                    hintText: "예: '화가 날 때' 표현을 알고 싶어요",
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide(color: Colors.black.withOpacity(0.08)),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide(color: Colors.black.withOpacity(0.08)),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide(color: Colors.white.withOpacity(0.9), width: 1.4),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: kGap8),
+                              SizedBox(
+                                height: 48,
+                                child: FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: cs.primary,
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  onPressed: _onSearch,
+                                  child: const Text('검색'),
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SizedBox(
+                                  height: 48,
+                                  child: TextField(
+                                    controller: _searchCtrl,
+                                    onSubmitted: (_) => _onSearch(),
+                                    textInputAction: TextInputAction.search,
+                                    maxLines: 1,
+                                    autocorrect: false,
+                                    enableSuggestions: false,
+                                    textCapitalization: TextCapitalization.none,
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      prefixIcon: const Icon(Icons.search),
+                                      hintText: "예: '화가 날 때' 표현을 알고 싶어요",
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                        borderSide: BorderSide(color: Colors.black.withOpacity(0.08)),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                        borderSide: BorderSide(color: Colors.black.withOpacity(0.08)),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                        borderSide: BorderSide(color: Colors.white.withOpacity(0.9), width: 1.4),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: kGap8),
+                              SizedBox(
+                                height: 48,
+                                child: FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: cs.primary,
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  onPressed: _onSearch,
+                                  child: const Text('검색'),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
                   ),
 
-                const SizedBox(height: kGap20),
+                  const SizedBox(height: kGap20),
 
-                // 5) Recent phrases
-                Text('최근 학습한 표현', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 20)),
-                const SizedBox(height: kGap12),
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _recent.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: kGap8),
-                  itemBuilder: (context, i) {
-                    final item = _recent[i];
-                    return RecentPhraseTile(phrase: item);
-                  },
-                ),
-              ],
-            ),
-          );
-        },
+                  // 3) KPI row (responsive)
+                  if (!kpiTwoColumn)
+                    Row(
+                      children: const [
+                        Expanded(
+                          child: MetricCard(
+                            icon: Icons.trending_up,
+                            title: '학습 연속일',
+                            value: '7일',
+                          ),
+                        ),
+                        SizedBox(width: kGap12),
+                        Expanded(
+                          child: MetricCard(
+                            icon: Icons.sticky_note_2,
+                            title: '복습 대기',
+                            value: '12개',
+                          ),
+                        ),
+                        SizedBox(width: kGap12),
+                        Expanded(
+                          child: MetricCard(
+                            icon: Icons.mic,
+                            title: '지금까지 연습한 문장',
+                            value: '24개',
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Wrap(
+                      spacing: kGap12,
+                      runSpacing: kGap12,
+                      children: [
+                        SizedBox(
+                          width: (constraints.maxWidth - kGap12) / 2,
+                          child: const MetricCard(icon: Icons.trending_up, title: '학습 연속일', value: '7일'),
+                        ),
+                        SizedBox(
+                          width: (constraints.maxWidth - kGap12) / 2,
+                          child: const MetricCard(icon: Icons.sticky_note_2, title: '복습 대기', value: '12개'),
+                        ),
+                        SizedBox(
+                          width: (constraints.maxWidth - kGap12) / 2,
+                          child: const MetricCard(icon: Icons.mic, title: '지금까지 연습한 문장', value: '24개'),
+                        ),
+                      ],
+                    ),
+
+                  const SizedBox(height: kGap20),
+
+                  // 4) "빠른 복습" + action cards (responsive)
+                  Text('빠른 복습', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 20)),
+                  const SizedBox(height: kGap12),
+                  if (isNarrow)
+                    SizedBox(
+                      height: 130,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          QuickActionCard(
+                            icon: Icons.autorenew,
+                            title: '복습하기',
+                            caption: '12개 대기중',
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LearnPage())),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: QuickActionCard(
+                            icon: Icons.autorenew,
+                            title: '복습하기',
+                            caption: '12개 대기중',
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LearnPage())),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                  const SizedBox(height: kGap20),
+
+                  // 5) Recent phrases
+                  Text('최근 학습한 표현', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 20)),
+                  const SizedBox(height: kGap12),
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _recent.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: kGap8),
+                    itemBuilder: (context, i) {
+                      final item = _recent[i];
+                      return RecentPhraseTile(phrase: item);
+                    },
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -552,6 +577,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+    final tinyChat = MediaQuery.of(context).size.width < 360;
 
     return Scaffold(
       // ✅ FIX: 여기서도 자동 리사이즈 끔. 아래 AnimatedPadding만으로 처리.
@@ -602,7 +628,40 @@ class _SpeakingPageState extends State<SpeakingPage> {
                   color: cs.surface,
                   border: Border(top: BorderSide(color: cs.outlineVariant.withOpacity(0.25))),
                 ),
-                child: Row(
+                child: tinyChat
+                    ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      height: 48,
+                      child: TextField(
+                        controller: _inputCtrl,
+                        maxLines: 1,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _send(),
+                        decoration: InputDecoration(
+                          hintText: '메시지를 입력하세요',
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: SizedBox(
+                        height: 40,
+                        width: 40,
+                        child: FilledButton(
+                          onPressed: _send,
+                          child: const Icon(Icons.send, size: 16),
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+                    : Row(
                   children: [
                     Expanded(
                       child: SizedBox(
