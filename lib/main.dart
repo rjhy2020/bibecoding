@@ -58,6 +58,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final TextEditingController _searchCtrl = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
   final _recent = const [
     RecentPhrase(text: "I'm over the moon", meaning: "매우 기뻤다", difficulty: "쉬움"),
     RecentPhrase(text: "Break a leg", meaning: "행운을 빌어!", difficulty: "보통"),
@@ -77,6 +78,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _searchFocus.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -153,13 +155,16 @@ class _HomePageState extends State<HomePage> {
                               SizedBox(
                                 height: 48,
                                 child: TextField(
+                                  key: const ValueKey('home_search_input'),
                                   controller: _searchCtrl,
+                                  focusNode: _searchFocus,
                                   onSubmitted: (_) => _onSearch(),
                                   textInputAction: TextInputAction.search,
                                   maxLines: 1,
                                   autocorrect: false,
                                   enableSuggestions: false,
                                   textCapitalization: TextCapitalization.none,
+                                  spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
                                   decoration: InputDecoration(
                                     isDense: true,
                                     prefixIcon: const Icon(Icons.search),
@@ -205,13 +210,16 @@ class _HomePageState extends State<HomePage> {
                                 child: SizedBox(
                                   height: 48,
                                   child: TextField(
+                                    key: const ValueKey('home_search_input'),
                                     controller: _searchCtrl,
+                                    focusNode: _searchFocus,
                                     onSubmitted: (_) => _onSearch(),
                                     textInputAction: TextInputAction.search,
                                     maxLines: 1,
                                     autocorrect: false,
                                     enableSuggestions: false,
                                     textCapitalization: TextCapitalization.none,
+                                    spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
                                     decoration: InputDecoration(
                                       isDense: true,
                                       prefixIcon: const Icon(Icons.search),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SpellCheckConfiguration, TextCapitalization;
 
 import 'chat_message.dart';
 import '../../services/openai_chat_service.dart';
@@ -139,7 +140,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 }
 
-class _InputBar extends StatelessWidget {
+class _InputBar extends StatefulWidget {
   final TextEditingController controller;
   final VoidCallback onSend;
   final bool sending;
@@ -150,46 +151,70 @@ class _InputBar extends StatelessWidget {
   });
 
   @override
+  State<_InputBar> createState() => _InputBarState();
+}
+
+class _InputBarState extends State<_InputBar> {
+  late final FocusNode _fn;
+
+  @override
+  void initState() {
+    super.initState();
+    _fn = FocusNode(debugLabel: 'chat_input_fn');
+  }
+
+  @override
+  void dispose() {
+    _fn.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return SafeArea(
       top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          border: Border(top: BorderSide(color: cs.outlineVariant.withOpacity(0.3))),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: controller,
-                minLines: 1,
-                maxLines: 5,
-                keyboardType: TextInputType.multiline,
-                autocorrect: false,
-                enableSuggestions: false,
-                textCapitalization: TextCapitalization.none,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => onSend(),
-                decoration: InputDecoration(
-                  hintText: "질문을 입력하세요",
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
+      child: RepaintBoundary(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            border: Border(top: BorderSide(color: cs.outlineVariant.withOpacity(0.3))),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('chat_input_field'),
+                  controller: widget.controller,
+                  focusNode: _fn,
+                  minLines: 1,
+                  maxLines: 5,
+                  keyboardType: TextInputType.multiline,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  textCapitalization: TextCapitalization.none,
+                  spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => widget.onSend(),
+                  decoration: InputDecoration(
+                    hintText: "질문을 입력하세요",
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            IconButton.filled(
-              onPressed: sending ? null : onSend,
-              icon: const Icon(Icons.send),
-              color: cs.onPrimary,
-            ),
-          ],
+              const SizedBox(width: 8),
+              IconButton.filled(
+                onPressed: widget.sending ? null : widget.onSend,
+                icon: const Icon(Icons.send),
+                color: cs.onPrimary,
+              ),
+            ],
+          ),
         ),
       ),
     );
