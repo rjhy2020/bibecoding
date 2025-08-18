@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show SpellCheckConfiguration, TextCapitalization;
+import 'package:flutter/services.dart' show SpellCheckConfiguration, TextCapitalization, SmartDashesType, SmartQuotesType;
 
 import 'chat_message.dart';
 import '../../services/openai_chat_service.dart';
@@ -194,6 +194,8 @@ class _InputBarState extends State<_InputBar> {
                   autocorrect: false,
                   enableSuggestions: false,
                   textCapitalization: TextCapitalization.none,
+                  smartDashesType: SmartDashesType.disabled,
+                  smartQuotesType: SmartQuotesType.disabled,
                   spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => widget.onSend(),

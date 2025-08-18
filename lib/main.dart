@@ -2,8 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'features/chat/chat_page.dart';
 
+Future<void> _preloadFonts() async {
+  final loader = FontLoader('GowunDodum')
+    ..addFont(rootBundle.load('assets/fonts/GowunDodum-Regular.ttf'));
+  await loader.load();
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _preloadFonts();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const EnglishPlease());
 }
@@ -19,6 +26,7 @@ class EnglishPlease extends StatelessWidget {
       themeMode: ThemeMode.system,
       theme: ThemeData(
         useMaterial3: true,
+        fontFamily: 'GowunDodum',
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF5B8DEF)),
         // Flutter 최신: CardThemeData 사용 + 표면 틴트 제거(어둑함 방지)
         cardTheme: const CardThemeData(
@@ -47,6 +55,20 @@ class RecentPhrase {
   final String meaning;
   final String difficulty;
   const RecentPhrase({required this.text, required this.meaning, required this.difficulty});
+}
+
+class FontWarmUp extends StatelessWidget {
+  const FontWarmUp({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Offstage(
+      offstage: true,
+      child: Text(
+        '가나다라마바사아자차카타파하',
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+    );
+  }
 }
 
 /* ============================== Home Page ============================== */
@@ -99,14 +121,15 @@ class _HomePageState extends State<HomePage> {
             return SingleChildScrollView(
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: const EdgeInsets.fromLTRB(kGap16, kGap16, kGap16, kGap24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 1) Top greeting
-                  Text(
-                    '안녕하세요! 👋',
-                    style: text.bodySmall?.copyWith(fontSize: 14, fontWeight: FontWeight.w500),
-                  ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const FontWarmUp(),
+                // 1) Top greeting
+                Text(
+                  '안녕하세요! 👋',
+                  style: text.bodySmall?.copyWith(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
                   const SizedBox(height: kGap8),
                   Text(
                     '오늘도 영어 공부해볼까요?',
@@ -164,6 +187,8 @@ class _HomePageState extends State<HomePage> {
                                   autocorrect: false,
                                   enableSuggestions: false,
                                   textCapitalization: TextCapitalization.none,
+                                  smartDashesType: SmartDashesType.disabled,
+                                  smartQuotesType: SmartQuotesType.disabled,
                                   spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
                                   decoration: InputDecoration(
                                     isDense: true,
@@ -219,6 +244,8 @@ class _HomePageState extends State<HomePage> {
                                     autocorrect: false,
                                     enableSuggestions: false,
                                     textCapitalization: TextCapitalization.none,
+                                    smartDashesType: SmartDashesType.disabled,
+                                    smartQuotesType: SmartQuotesType.disabled,
                                     spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
                                     decoration: InputDecoration(
                                       isDense: true,

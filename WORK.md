@@ -107,10 +107,11 @@
 
 ### 구현 단계(IME 이슈 전용)
 I1. CanvasKit 기본 런/빌드 설정 추가 — status: pending
-I2. 입력 바 위젯 분리 + FocusNode/Key 적용 — status: pending
-I3. `spellCheckConfiguration` 명시적으로 비활성화 — status: pending
-I4. 메시지/로딩 상태 격리(Provider/ChangeNotifier) — status: pending
-I5. 크로스 브라우저/플랫폼 테스트 체크리스트 수행 — status: pending
+I2. 입력 바 위젯 분리 + FocusNode/Key 적용 — status: completed
+I3. `spellCheckConfiguration`/SmartDashes/SmartQuotes 비활성화 — status: completed
+I4. 번들 한글 폰트 추가 + FontLoader 프리로드 + 웜업 — status: completed
+I5. 메시지/로딩 상태 격리(Provider/ChangeNotifier) — status: pending
+I6. 크로스 브라우저/플랫폼 테스트 체크리스트 수행 — status: pending
 
 ### Acceptance Criteria
 - 고속 한글 입력 중에도 조합(가-가ㅏ 등) 깨짐/깜빡임 없이 연속 입력이 가능하다.
