@@ -25,7 +25,7 @@ class _ChatPageState extends State<ChatPage> {
     super.initState();
     // 초깃값: 사용자의 검색어를 메시지로 추가 후 곧바로 전송
     _appendUser(widget.initialQuery);
-    _sendToAI(widget.initialQuery);
+    _sendToAI();
   }
 
   @override
@@ -72,11 +72,11 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  Future<void> _sendToAI(String query) async {
+  Future<void> _sendToAI() async {
     if (_loading) return;
     setState(() => _loading = true);
     try {
-      final reply = await _service.askExpression(query);
+      final reply = await _service.askWithHistory(_messages);
       _appendAssistant(reply);
     } catch (e) {
       if (mounted) {
@@ -94,7 +94,7 @@ class _ChatPageState extends State<ChatPage> {
     if (text.isEmpty) return;
     _inputCtrl.clear();
     _appendUser(text);
-    _sendToAI(text);
+    _sendToAI();
   }
 
   @override

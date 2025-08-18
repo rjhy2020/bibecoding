@@ -116,3 +116,38 @@ I6. 크로스 브라우저/플랫폼 테스트 체크리스트 수행 — status
 ### Acceptance Criteria
 - 고속 한글 입력 중에도 조합(가-가ㅏ 등) 깨짐/깜빡임 없이 연속 입력이 가능하다.
 - 채팅 전송/로딩 등 UI 갱신 상황에서도 입력창 커서/조합 상태가 유지된다.
+
+## 채팅 맥락 유지(세션 단위)
+- 목표: 같은 채팅 세션(ChatPage)에서 사용자/어시스턴트 이전 메시지를 모두 포함해 OpenAI에 전달, 답변이 문맥을 이어가도록 한다. 창을 닫으면 세션 상태는 초기화(영구 저장 없음).
+
+### UX/동작 요약
+- 사용자는 채팅 화면에서 여러 번 연속 질문 가능. 어시스턴트는 이전 대화 내용을 참고해 답변한다.
+- ChatPage를 닫고 다시 열면 새로운 세션으로 시작(이전 내역은 보존하지 않음).
+
+### Data & State
+- 모델: 기존 `ChatMessage { id, role(user|assistant|system), content, ts }` 재사용.
+- 상태: ChatPage의 `List<ChatMessage> messages`를 계속 누적 보관(세션 범위). 세션 종료는 `ChatPage` dispose로 자연 초기화.
+- 히스토리 정책: 최근 N턴만 유지(예: 마지막 12개 메시지; 추후 토큰 기반으로 개선).
+
+### API 변경 설계
+- 서비스 시그니처 확장: `Future<String> askWithHistory(List<ChatMessage> history)` 추가.
+  - 변환: `history`를 OpenAI Chat `messages` 형태로 매핑(역할: user/assistant). 시스템 프롬프트는 배열 맨 앞 1회.
+  - 컨텍스트 관리: 오래된 턴을 제거(슬라이딩 윈도)하여 토큰 초과 방지.
+  - 예외 처리: 400/413(Context length) 발생 시 히스토리를 절반으로 줄여 재시도(1회) → 실패 시 사용자 안내.
+
+### 구현 단계(컨텍스트)
+ C1. 서비스: `askWithHistory(history)` 추가, role 매핑/바디 생성 — status: completed
+ C2. ChatPage: `_sendToAI()`가 현재 누적 `messages`로 호출하도록 변경 — status: completed
+ C3. 히스토리 트리밍 정책(last N) 적용 및 413 재시도 처리 — status: completed
+ C4. 세션 초기화 확인: `ChatPage` 재진입 시 빈 상태에서 시작(현 구조 유지 확인) — status: completed
+C5. 수동 테스트: 3~5턴 대화에서 맥락 유지 확인 — status: pending
+C6. 문서/주석 갱신(세션 범위, 토큰 정책) — status: pending
+
+### Acceptance Criteria(컨텍스트)
+- 3턴 이상 왕복 후에도 이전 사용자 발화를 참조한 답변이 나온다.
+- ChatPage 종료 후 재진입하면 과거 내역 없이 새로 시작한다.
+- 긴 대화에서도 응답이 정상이며, 토큰 초과 시 자동 트리밍 후 재시도한다(필요 시 사용자에게 알림).
+
+### Backlog(컨텍스트)
+- 오래된 히스토리 자동 요약(summarization)으로 더 긴 맥락 유지
+- 대화 로그 임시 저장 옵션(앱 종료 전까지 캐시) — 기본은 비활성
