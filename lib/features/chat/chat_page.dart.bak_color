@@ -170,7 +170,7 @@ class _ChatPageState extends State<ChatPage> {
                         content: display,
                         isUser: isUser,
                         color: isUser ? cs.primary : cs.surface,
-                        textColor: isUser ? cs.onPrimary : Colors.black,
+                        textColor: isUser ? cs.onPrimary : cs.onSurface,
                       ),
                       if (!isUser)
                         Align(
