@@ -1,0 +1,39 @@
+WORK PLAN — ((...)) 마커 추가 (기존 코드 유지)
+
+목표
+- 기존 `{{ ... }}` 처리 로직은 그대로 둔다.
+- 새로 `(( ... ))` 구간을 화면에서는 제거하고, 괄호 안 내용은 변수에 저장한다.
+- 구현 방식은 기존 코드 스타일을 그대로 따라 유사 함수로 추가한다(치환/대체 아님, 병행 지원).
+
+구현 항목
+- 추출 함수 추가: `_extractParenPattern(String text)` → 첫 `(( ... ))`의 내용만 캡처.
+  - 정규식: `\(\(\s*(.*?)\s*\)\)` (필요 시 줄바꿈 대응은 `dotAll: true` 또는 `[\s\S]`)
+- 제거 함수 추가: `_stripParenMarkers(String text)` → 모든 `((...))` 구간(괄호 포함) 삭제.
+  - 정규식: `RegExp(r'\(\(\s*[\s\S]*?\s*\)\)')` (비탐욕, 다중/줄바꿈 지원)
+- 상태 변수 추가: `String? _lastParenPattern;` (마지막 추출 결과를 저장)
+  - 필요 시 여러 개 보관: `final List<String> _parenPatterns = [];` (옵션)
+- 어시스턴트 메시지 후킹: `_appendAssistant(String content)` 호출 시점에 `((...))`를 추출해 `_lastParenPattern`에 저장(공백/빈값은 무시).
+- 표시 파이프라인: 기존 `_stripPatternMarkers`는 그대로 두고, 렌더링 시 체이닝만 추가.
+  - `final display = isUser ? m.content : _stripParenMarkers(_stripPatternMarkers(m.content));`
+- 예문 생성 초기값: `((...))`가 있으면 우선 사용, 없으면 기존 `{{...}}` 결과를 fallback.
+  - `final initialPattern = _lastParenPattern ?? _extractPattern(assistantText) ?? '';`
+
+경계 사례
+- `(( ))`처럼 내용이 비어있거나 공백뿐이면 저장하지 않음.
+- 다중 `((...))`가 한 응답에 있을 때: 표시에서는 모두 제거, 저장은 첫 번째만(기존 `{{...}}`과 일관). 다중 보관이 필요하면 확장.
+- 이스케이프/중첩은 비지원(요청 시 별도 설계).
+
+변경 범위
+- `lib/features/chat/chat_page.dart` 내부만 수정 추가.
+- 기존 함수/로직 삭제/치환 없음. 서비스/모델/다른 화면 변경 없음.
+
+검증
+- 입력: `답변 ((learn by heart)) 예시` → 화면: `답변  예시`(이중 괄호와 내부 내용 제거), `_lastParenPattern == 'learn by heart'`.
+- 입력: `((  take a rain check  )) 더보기` → `_lastParenPattern == 'take a rain check'`.
+- 기존 `{{...}}` 포함 응답은 현재 동작을 그대로 유지(표시/추출 모두 OK).
+
+커밋
+- 메시지: `feat(chat): ((...)) 마커 병행 지원 및 내용 저장`
+
+승인 요청
+- 위 계획에 동의하시면 해당 방식으로 구현 후 커밋/푸시하겠습니다. 첫 항목만 저장할지(기본) vs 전부 리스트로 저장할지 선택해 주세요.

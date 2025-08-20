@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:flutter/services.dart' show SpellCheckConfiguration, TextCapitalization, SmartDashesType, SmartQuotesType, rootBundle;
-import 'dart:convert' show jsonEncode;
+import 'package:flutter/services.dart' show SpellCheckConfiguration, TextCapitalization, SmartDashesType, SmartQuotesType;
 
 import 'chat_message.dart';
 import '../../services/openai_chat_service.dart';
-import '../../services/examples_api.dart';
-import '../speaking/speaking_page.dart';
 
 class ChatPage extends StatefulWidget {
   final String initialQuery;
@@ -18,15 +14,11 @@ class ChatPage extends StatefulWidget {
 
 class _ChatPageState extends State<ChatPage> {
   final _service = OpenAIChatService();
-  final _examplesApi = ExamplesApi();
   int _seq = 0;
   final _inputCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   final List<ChatMessage> _messages = [];
   bool _loading = false;
-  bool _examplesLoading = false;
-  String? _lastCurlyPattern; // last extracted from {{...}}
-  String? _lastParenPattern; // last extracted from ((...))
 
   @override
   void initState() {
@@ -56,16 +48,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _appendAssistant(String content) {
-    final paren = _extractParenPattern(content);
-    final curly = _extractPattern(content);
-    debugPrint('extract | paren="${paren ?? '-'}", curly="${curly ?? '-'}"');
     setState(() {
-      if (paren != null && paren.isNotEmpty) {
-        _lastParenPattern = paren;
-      }
-      if (curly != null && curly.isNotEmpty) {
-        _lastCurlyPattern = curly;
-      }
       _messages.add(ChatMessage(
         id: _makeId(),
         role: ChatRole.assistant,
@@ -73,7 +56,6 @@ class _ChatPageState extends State<ChatPage> {
         ts: DateTime.now(),
       ));
     });
-    _debugLogPatterns('appendAssistant');
     _scrollToBottomDeferred();
   }
 
@@ -126,17 +108,6 @@ class _ChatPageState extends State<ChatPage> {
     return null;
   }
 
-  /// '(( ... ))' 안의 첫 패턴을 추출. 없으면 null
-  String? _extractParenPattern(String text) {
-    final re = RegExp(r"\(\(\s*(.*?)\s*\)\)", dotAll: true);
-    final match = re.firstMatch(text);
-    if (match != null && match.groupCount >= 1) {
-      final s = match.group(1)!.trim();
-      return s.isEmpty ? null : s;
-    }
-    return null;
-  }
-
   /// 응답 내 '{{ ... }}' 마커를 내용만 남기고 제거
   /// 응답 내 '{{ ... }}' 마커를 내용만 남기고 제거 (줄바꿈 보존)
   String _stripPatternMarkers(String text) {
@@ -153,41 +124,8 @@ class _ChatPageState extends State<ChatPage> {
         .trim();
   }
 
-  /// 응답 내 '(( ... ))' 마커를 내용만 남기고 제거 (줄바꿈 보존)
-  String _stripParenMarkers(String text) {
-    final re = RegExp(r'\(\(\s*[\s\S]*?\s*\)\)');
-    final stripped = text.replaceAll(re, '');
-    return stripped
-        .replaceAll(RegExp(r'[ \t]{2,}'), ' ')
-        .replaceAll(RegExp(r'\n[ \t]+'), '\n')
-        .replaceAll(RegExp(r'[ \t]+\n'), '\n')
-        .trim();
-  }
-
-  void _debugLogPatterns([String where = '']) {
-    final tag = where.isNotEmpty ? ' [$where]' : '';
-    debugPrint('pattern$tag | paren="${_lastParenPattern ?? '-'}", curly="${_lastCurlyPattern ?? '-'}"');
-  }
-
-  String _extractFirstEnglishSentence(String text) {
-    final cleaned = _stripParenMarkers(_stripPatternMarkers(text)).trim();
-    if (cleaned.isEmpty) return '';
-    final lines = cleaned.split(RegExp(r'\r?\n')).map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    for (final line in lines) {
-      if (!RegExp(r'[A-Za-z]').hasMatch(line)) continue;
-      final m = RegExp(r'([A-Za-z][^.!?]*[.!?])').firstMatch(line);
-      if (m != null) return m.group(1)!.trim();
-      return line; // fallback to the whole line
-    }
-    // last resort: first 120 chars
-    return cleaned.length <= 120 ? cleaned : cleaned.substring(0, 120);
-  }
-
-  // timestamp helper removed (no file saving)
-
   Future<void> _openExampleDialog(String assistantText) async {
-    final initialPattern = _lastParenPattern ?? _lastCurlyPattern ?? _extractPattern(assistantText) ?? '';
-    debugPrint('initialPattern="$initialPattern", lastParen="${_lastParenPattern ?? '-'}", lastCurly="${_lastCurlyPattern ?? '-'}"');
+    final initialPattern = _extractPattern(assistantText) ?? '';
     final res = await showModalBottomSheet<_ExampleGenResult>(
       context: context,
       isScrollControlled: true,
@@ -195,55 +133,10 @@ class _ChatPageState extends State<ChatPage> {
     );
     if (!mounted) return;
     if (res != null) {
-      // Begin loading and fire API + save flow
-      setState(() => _examplesLoading = true);
-      try {
-        final prompt = await rootBundle.loadString('assets/prompts/examples_prompt.txt');
-        final pattern = (_lastParenPattern ?? _lastCurlyPattern ?? res.pattern).trim();
-        final sentence = _extractFirstEnglishSentence(assistantText);
-        final count = res.count;
-        debugPrint('[Examples] req | pattern="$pattern", sentence="$sentence", count=$count');
-
-        final data = await _examplesApi.generate(
-          prompt: prompt,
-          pattern: pattern,
-          sentence: sentence,
-          count: count,
-        );
-
-        // Debug print the received JSON
-        try {
-          debugPrint('[Examples] resp: ${jsonEncode(data)}');
-        } catch (_) {
-          debugPrint('[Examples] resp (non-encodable) type=${data.runtimeType}');
-        }
-
-        if (!mounted) return;
-        // Turn off loading before navigation
-        setState(() => _examplesLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('예문 생성 완료')), // optional feedback
-        );
-        // Navigate to SpeakingPage
-        // Delay to ensure overlay teardown
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => SpeakingPage(examples: data),
-            ),
-          );
-        });
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('예문 생성 실패: $e')),
-        );
-        debugPrint('[Examples] error: $e');
-      } finally {
-        // Ensure loading off if we haven't already cleared it
-        if (mounted && _examplesLoading) setState(() => _examplesLoading = false);
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('예문 생성 요청: ${res.count}개, 패턴: ${res.pattern}')),
+      );
+      // TODO: Cloud Functions 연동 예정
     }
   }
 
@@ -255,70 +148,47 @@ class _ChatPageState extends State<ChatPage> {
         title: const Text('표현 도우미'),
       ),
       body: SafeArea(
-        child: Stack(
+        child: Column(
           children: [
-            Column(
-              children: [
-                Expanded(
-                  child: ListView.builder(
-                    controller: _scrollCtrl,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    itemCount: _messages.length + (_loading ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (_loading && index == _messages.length) {
-                        // 로딩 인디케이터 메시지
-                        return const _TypingBubble();
-                      }
-                      final m = _messages[index];
-                      final isUser = m.role == ChatRole.user;
-                      final display = isUser ? m.content : _stripParenMarkers(_stripPatternMarkers(m.content));
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _MessageBubble(
-                            content: display,
-                            isUser: isUser,
-                            color: isUser ? cs.primary : cs.surface,
-                            textColor: isUser ? cs.onPrimary : Colors.black,
+            Expanded(
+              child: ListView.builder(
+                controller: _scrollCtrl,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                itemCount: _messages.length + (_loading ? 1 : 0),
+                itemBuilder: (context, index) {
+                  if (_loading && index == _messages.length) {
+                    // 로딩 인디케이터 메시지
+                    return const _TypingBubble();
+                  }
+                  final m = _messages[index];
+                  final isUser = m.role == ChatRole.user;
+                  final display = isUser ? m.content : _stripPatternMarkers(m.content);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _MessageBubble(
+                        content: display,
+                        isUser: isUser,
+                        color: isUser ? cs.primary : cs.surface,
+                        textColor: isUser ? cs.onPrimary : Colors.black,
+                      ),
+                      if (!isUser)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: _ExampleCtaBox(
+                            onTap: () => _openExampleDialog(m.content),
                           ),
-                          if (!isUser)
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: _ExampleCtaBox(
-                                onTap: () {
-                                  if (_examplesLoading) return;
-                                  _openExampleDialog(m.content);
-                                },
-                              ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                _InputBar(
-                  controller: _inputCtrl,
-                  onSend: _onSendPressed,
-                  sending: _loading,
-                ),
-              ],
-            ),
-            if (_examplesLoading)
-              Positioned.fill(
-                child: Container(
-                  color: Colors.black.withOpacity(0.15),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(color: cs.primary),
-                        const SizedBox(height: 12),
-                        Text('예문 생성 중...', style: TextStyle(color: cs.onSurface)),
-                      ],
-                    ),
-                  ),
-                ),
+                        ),
+                    ],
+                  );
+                },
               ),
+            ),
+            _InputBar(
+              controller: _inputCtrl,
+              onSend: _onSendPressed,
+              sending: _loading,
+            ),
           ],
         ),
       ),
