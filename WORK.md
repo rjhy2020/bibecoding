@@ -31,3 +31,44 @@ WORK PLAN — 스피킹 플로우(TTS + 단어별 STT 하이라이트 + 패스/�
 
 승인 필요
 - 위 단계대로 구현할까요? 의존성 추가와 퍼미션 설정 포함해 최소 동작을 먼저 완성한 뒤, 퍼지 매칭/자동 진행 타이밍을 다듬겠습니다.
+
+---
+
+WORK PLAN — 스피킹: 순서 무관(BoW) 인식/하이라이트
+
+목표
+- 사용자가 문장 뒷부분을 먼저 말해도 해당 단어가 맞았으면 초록색 처리되도록, “순서 무관” 단어 매칭으로 변경한다.
+
+핵심 설계
+- 정규화: 목표 문장 토큰을 소문자/영숫자만 남긴 리스트 `_tokens`와 표시용 `_displayTokens` 유지(현행 유지).
+- 중복 대응: 목표 토큰별 필요 개수 `need[token]` 맵, 인식 토큰별 개수 `have[token]` 맵 계산.
+- 매칭 플래그: 길이 N의 `List<bool> _matchedFlags` 생성.
+  - 좌→우로 `_tokens[i]` 순회하며 `used[token]` 카운터를 증가시키되, `have[token] > used[token]`일 때만 해당 인덱스를 `true`로 설정(중복 단어 처리).
+- 진행률: `_matchedCount = _matchedFlags.where(true).length`로 계산하고, ‘다음’ 버튼 활성화는 `_matchedCount == _tokens.length` 조건으로 변경.
+- UI: 하이라이트는 각 인덱스의 `_matchedFlags[i]`로 표시(현행 i < _matched 제거).
+- onResult: partial transcript마다 `have` 재계산 → `_matchedFlags`/`_matchedCount` 갱신.
+
+단계별 변경
+1) 상태 확장: `_matchedFlags`(List<bool>), `_matchedCount`(int) 추가.
+2) 매칭 로직: `List<String> recTokens` → `have` 맵 생성 → `_matchedFlags` 재구성 함수 작성.
+3) UI 반영: Chip의 `matched` 기준을 `_matchedFlags[i]`로 교체, ‘다음’ 버튼 활성화 조건 변경.
+4) 로깅: 매칭율(예: matched/total), 누락 단어 목록 디버그 출력.
+
+경계/사례
+- 순서 무관: “world hello”로 말해도 “hello world”의 두 단어 모두 초록 처리.
+- 중복: “to to school”처럼 같은 단어가 여러 번 있으면, 인식된 수만큼만 매칭.
+- 부분 인식: 일부만 맞춰도 부분 초록 처리 후, 나머지 단어 인식 시 점진적 완성.
+
+옵션(후속)
+- 퍼지 매칭: Levenshtein ≤ 1 허용 토글(초기 OFF), 축약형/흔한 오탈자 매핑(I'm→im 등) 테이블.
+
+검증 시나리오
+- “take a deep breath” 목표, 인식: “deep breath take a” → 전부 초록.
+- “go go home” 목표, 인식: “go home” → 두 개 중 2개만 매칭 처리, 마지막 go 미매칭.
+- 부분 인식: “take deep”까지만 인식 시 해당 단어만 초록.
+
+변경 범위
+- `lib/features/speaking/speaking_page.dart` 내부 로직만 수정(상태/매칭/하이라이트/다음 버튼 조건).
+
+승인 필요
+- 승인 주시면 위 순서로 반영하고, 성능/지연 없이 실시간 매칭되도록 onResult 경량화까지 확인하겠습니다.

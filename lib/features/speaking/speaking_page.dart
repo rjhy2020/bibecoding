@@ -24,9 +24,10 @@ class _SpeakingPageState extends State<SpeakingPage> {
   bool _listening = false;
   int _index = 0;
   late List<ExampleItem> _items;
-  late List<String> _tokens; // normalized tokens
+  late List<String> _tokens; // normalized tokens (non-empty)
   late List<String> _displayTokens; // original tokens for display
-  int _matched = 0; // matched tokens count
+  List<bool> _matchedFlags = const []; // per display token matched flag
+  int _matchedCount = 0; // number of matched normalized tokens
 
   @override
   void initState() {
@@ -41,7 +42,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
   void dispose() {
     _tts.stop();
     if (_listening) {
-      _stt.stop();
+      _stt.cancel();
     }
     super.dispose();
   }
@@ -92,7 +93,8 @@ class _SpeakingPageState extends State<SpeakingPage> {
     final pair = _tokenize(item.sentence);
     _displayTokens = pair.display;
     _tokens = pair.norm;
-    _matched = 0;
+    _matchedFlags = List<bool>.filled(_displayTokens.length, false);
+    _matchedCount = 0;
     setState(() {});
   }
 
@@ -115,7 +117,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
   Future<void> _toggleListen() async {
     if (!_sttAvailable) return;
     if (_listening) {
-      await _stt.stop();
+      await _stt.cancel();
       setState(() => _listening = false);
       _checkPass();
       return;
@@ -130,12 +132,9 @@ class _SpeakingPageState extends State<SpeakingPage> {
             .map((e) => e.replaceAll(RegExp(r'[^a-z0-9]'), ''))
             .where((e) => e.isNotEmpty)
             .toList();
-        final matched = _countMatchedPrefix(_tokens, recTokens);
-        if (matched != _matched) {
-          setState(() => _matched = matched);
-          if (_matched >= _tokens.length) {
-            _autoPass();
-          }
+        _recomputeMatches(recTokens);
+        if (_matchedCount >= _tokens.length) {
+          _autoPass();
         }
       },
       listenMode: stt.ListenMode.dictation,
@@ -144,23 +143,49 @@ class _SpeakingPageState extends State<SpeakingPage> {
     );
   }
 
-  int _countMatchedPrefix(List<String> target, List<String> rec) {
-    int i = 0;
-    for (final r in rec) {
-      if (i < target.length && r == target[i]) {
-        i++;
-      } else {
-        if (i > 0 && r == target[i - 1]) {
-          continue;
-        }
-      }
-      if (i >= target.length) break;
+  void _recomputeMatches(List<String> recNormTokens) {
+    // Build counts of recognized tokens
+    final have = <String, int>{};
+    for (final r in recNormTokens) {
+      have[r] = (have[r] ?? 0) + 1;
     }
-    return i;
+    // Used counters per token while assigning to display positions (left→right)
+    final used = <String, int>{};
+    final newFlags = List<bool>.filled(_displayTokens.length, false);
+    int matched = 0;
+    for (int i = 0; i < _displayTokens.length; i++) {
+      final raw = _displayTokens[i];
+      final norm = raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (norm.isEmpty) {
+        newFlags[i] = false;
+        continue;
+      }
+      final needAvailable = (have[norm] ?? 0) > (used[norm] ?? 0);
+      if (needAvailable) {
+        newFlags[i] = true;
+        used[norm] = (used[norm] ?? 0) + 1;
+        matched++;
+      }
+    }
+    if (matched != _matchedCount || !_listEqualsBool(_matchedFlags, newFlags)) {
+      setState(() {
+        _matchedFlags = newFlags;
+        _matchedCount = matched;
+      });
+    }
+  }
+
+  bool _listEqualsBool(List<bool> a, List<bool> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   void _checkPass() {
-    if (_matched >= _tokens.length) {
+    if (_matchedCount >= _tokens.length) {
       _showPassAndNext();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -171,20 +196,22 @@ class _SpeakingPageState extends State<SpeakingPage> {
 
   void _autoPass() async {
     if (_listening) {
-      await _stt.stop();
+      await _stt.cancel();
       setState(() => _listening = false);
     }
     _showPassAndNext(auto: true);
   }
 
   void _showPassAndNext({bool auto = false}) {
-    // No auto navigation; user advances via the '다음' button
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(auto ? "통과! '다음' 버튼을 눌러 진행하세요." : '통과!')),
-    );
+    // 안내 스낵바 제거: 사용자는 '다음' 버튼으로만 진행
   }
 
   void _next() {
+    // Ensure immediate stop before switching to next item
+    if (_listening) {
+      _stt.cancel();
+      setState(() => _listening = false);
+    }
     if (_index + 1 < _items.length) {
       setState(() {
         _index++;
@@ -254,7 +281,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
                           for (int i = 0; i < _displayTokens.length; i++)
                             _WordChip(
                               text: _displayTokens[i],
-                              matched: i < _matched,
+                              matched: (i < _matchedFlags.length) ? _matchedFlags[i] : false,
                             ),
                         ],
                       ),
@@ -282,7 +309,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
                       ),
                       const SizedBox(width: 12),
                       FilledButton.tonal(
-                        onPressed: _matched >= _tokens.length ? _next : null,
+                        onPressed: _matchedCount >= _tokens.length ? _next : null,
                         child: const Text('다음'),
                       ),
                     ],

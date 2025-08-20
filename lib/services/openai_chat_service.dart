@@ -1,20 +1,29 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../features/chat/chat_message.dart';
+import 'key_provider.dart';
 
 class OpenAIChatService {
-  // 테스트용: --dart-define로 주입하세요 (키 커밋 금지)
-  // 예) flutter run -d chrome --dart-define=OPENAI_API_KEY=sk-...
-  static const String kOpenAIKey = String.fromEnvironment('OPENAI_API_KEY', defaultValue: '');
+  // 로컬 하드코딩 오버라이드: 여기에 키를 넣으면 이 값이 최우선으로 사용됩니다.
+  // 예) static const String kLocalApiKey = 'sk-...';
+  static const String kLocalApiKey = '';
+  // 키는 외부 파일/환경변수에서 로드합니다(웹: --dart-define)
   static const String _baseUrl = 'https://api.openai.com/v1/chat/completions';
   static const String _model = 'gpt-4o'; // 비용 절감 시 'gpt-4o-mini'
-  static const int _defaultMaxTurns = 12; // 최근 N개 메시지 유지(user/assistant 합계)
+  static const int _defaultMaxTurns = 5; // 최근 N개 메시지 유지(user/assistant 합계)
+
+  // 공통 키 해석 메서드(ExamplesApi 등에서 사용)
+  static Future<String> resolveApiKey() async {
+    if (kLocalApiKey.isNotEmpty) return kLocalApiKey;
+    return await KeyProvider.loadOpenAIKey();
+  }
 
   final http.Client _client;
   OpenAIChatService({http.Client? client}) : _client = client ?? http.Client();
 
   Future<String> askExpression(String userQuery) async {
-    if (kOpenAIKey.isEmpty) {
+    final key = kLocalApiKey.isNotEmpty ? kLocalApiKey : await KeyProvider.loadOpenAIKey();
+    if (key.isEmpty) {
       return 'API 키가 설정되지 않았습니다. flutter run 실행 시 --dart-define=OPENAI_API_KEY=... 를 전달해 주세요.';
     }
 
@@ -36,7 +45,7 @@ class OpenAIChatService {
           .post(
             Uri.parse(_baseUrl),
             headers: {
-              'Authorization': 'Bearer $kOpenAIKey',
+              'Authorization': 'Bearer $key',
               'Content-Type': 'application/json',
             },
             body: jsonEncode(body),
@@ -75,7 +84,8 @@ class OpenAIChatService {
   }
 
   Future<String> askWithHistory(List<ChatMessage> history, {int? maxTurns}) async {
-    if (kOpenAIKey.isEmpty) {
+    final key = kLocalApiKey.isNotEmpty ? kLocalApiKey : await KeyProvider.loadOpenAIKey();
+    if (key.isEmpty) {
       return 'API 키가 설정되지 않았습니다. flutter run 실행 시 --dart-define=OPENAI_API_KEY=... 를 전달해 주세요.';
     }
 
@@ -105,7 +115,7 @@ class OpenAIChatService {
           .post(
             Uri.parse(_baseUrl),
             headers: {
-              'Authorization': 'Bearer $kOpenAIKey',
+              'Authorization': 'Bearer $key',
               'Content-Type': 'application/json',
             },
             body: jsonEncode(buildBody(turns)),

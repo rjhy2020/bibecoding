@@ -186,8 +186,8 @@ class _ChatPageState extends State<ChatPage> {
   // timestamp helper removed (no file saving)
 
   Future<void> _openExampleDialog(String assistantText) async {
-    final initialPattern = _lastParenPattern ?? _lastCurlyPattern ?? _extractPattern(assistantText) ?? '';
-    debugPrint('initialPattern="$initialPattern", lastParen="${_lastParenPattern ?? '-'}", lastCurly="${_lastCurlyPattern ?? '-'}"');
+    final initialPattern = _lastCurlyPattern ?? _extractPattern(assistantText) ?? '';
+    debugPrint('initialPattern(fromCurly)="$initialPattern", lastParen="${_lastParenPattern ?? '-'}", lastCurly="${_lastCurlyPattern ?? '-'}"');
     final res = await showModalBottomSheet<_ExampleGenResult>(
       context: context,
       isScrollControlled: true,
@@ -199,10 +199,27 @@ class _ChatPageState extends State<ChatPage> {
       setState(() => _examplesLoading = true);
       try {
         final prompt = await rootBundle.loadString('assets/prompts/examples_prompt.txt');
-        final pattern = (_lastParenPattern ?? _lastCurlyPattern ?? res.pattern).trim();
-        final sentence = _extractFirstEnglishSentence(assistantText);
+        // Use user-edited pattern first; fall back to lastCurly
+        String pattern = (res.pattern).trim();
+        if (pattern.isEmpty) {
+          pattern = (_lastCurlyPattern ?? '').trim();
+        }
+        final sentence = (_lastParenPattern ?? '').trim();
         final count = res.count;
-        debugPrint('[Examples] req | pattern="$pattern", sentence="$sentence", count=$count');
+        debugPrint('[Examples] req | pattern(used)="$pattern", sentence(paren)="$sentence", count=$count');
+
+        if (pattern.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('패턴이 비어 있습니다. {{...}}에서 패턴을 추출하거나 시트에서 입력해 주세요.')),
+          );
+          return;
+        }
+        if (sentence.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('영어 문장을 찾을 수 없습니다. ((...)) 형태로 문장을 포함해 주세요.')),
+          );
+          return;
+        }
 
         final data = await _examplesApi.generate(
           prompt: prompt,

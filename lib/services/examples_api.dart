@@ -15,7 +15,7 @@ class ExamplesApi {
     required String sentence,
     required int count,
   }) async {
-    final apiKey = OpenAIChatService.kOpenAIKey;
+    final apiKey = await OpenAIChatService.resolveApiKey();
     if (apiKey.isEmpty) {
       throw StateError('OPENAI_API_KEY is not set');
     }
