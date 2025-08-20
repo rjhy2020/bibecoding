@@ -40,7 +40,6 @@ class _SpeakingPageState extends State<SpeakingPage> {
   @override
   void dispose() {
     _tts.stop();
-    _tts.shutdown();
     if (_listening) {
       _stt.stop();
     }
@@ -49,7 +48,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
 
   Future<void> _initTts() async {
     await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(0.45);
+    await _tts.setSpeechRate(1);
     await _tts.setPitch(1.0);
   }
 
@@ -91,20 +90,20 @@ class _SpeakingPageState extends State<SpeakingPage> {
   void _prepareCard() {
     final item = _items[_index];
     final pair = _tokenize(item.sentence);
-    _displayTokens = pair.item1;
-    _tokens = pair.item2;
+    _displayTokens = pair.display;
+    _tokens = pair.norm;
     _matched = 0;
     setState(() {});
   }
 
-  (List<String>, List<String>) _tokenize(String sentence) {
+  ({List<String> display, List<String> norm}) _tokenize(String sentence) {
     final words = sentence.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
     final norm = <String>[];
     for (final w in words) {
       final cleaned = w.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
       if (cleaned.isNotEmpty) norm.add(cleaned);
     }
-    return (words, norm);
+    return (display: words, norm: norm);
   }
 
   Future<void> _speak() async {
@@ -179,10 +178,10 @@ class _SpeakingPageState extends State<SpeakingPage> {
   }
 
   void _showPassAndNext({bool auto = false}) {
+    // No auto navigation; user advances via the '다음' button
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(auto ? '통과! 다음 문장으로 이동합니다.' : '통과!')),
+      SnackBar(content: Text(auto ? "통과! '다음' 버튼을 눌러 진행하세요." : '통과!')),
     );
-    Future.delayed(const Duration(milliseconds: 900), _next);
   }
 
   void _next() {
