@@ -5,7 +5,7 @@ import '../features/chat/chat_message.dart';
 class OpenAIChatService {
   // 테스트용: --dart-define로 주입하세요 (키 커밋 금지)
   // 예) flutter run -d chrome --dart-define=OPENAI_API_KEY=sk-...
-  static const String kOpenAIKey = String.fromEnvironment('OPENAI_API_KEY', defaultValue: '');
+  static const String kOpenAIKey = String.fromEnvironment('OPENAI_API_KEY', defaultValue: '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');
   static const String _baseUrl = 'https://api.openai.com/v1/chat/completions';
   static const String _model = 'gpt-4o'; // 비용 절감 시 'gpt-4o-mini'
   static const int _defaultMaxTurns = 12; // 최근 N개 메시지 유지(user/assistant 합계)
