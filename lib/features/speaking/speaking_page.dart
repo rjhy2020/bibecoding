@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
@@ -22,6 +23,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
   final _stt = stt.SpeechToText();
   bool _sttAvailable = false;
   bool _listening = false;
+  bool _firstAutoplayDone = false;
   int _index = 0;
   late List<ExampleItem> _items;
   late List<String> _tokens; // normalized tokens (non-empty)
@@ -34,8 +36,14 @@ class _SpeakingPageState extends State<SpeakingPage> {
     super.initState();
     _items = _parseExamples(widget.examples);
     _prepareCard();
-    _initTts();
+    _initTts().whenComplete(() {
+      // Try autoplay after TTS initialized
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoplayFirst());
+      _maybeAutoplayFirst();
+    });
     _initStt();
+    // Fallback: try once after first frame as well
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoplayFirst());
   }
 
   @override
@@ -109,9 +117,24 @@ class _SpeakingPageState extends State<SpeakingPage> {
   }
 
   Future<void> _speak() async {
+    // Block TTS while listening (STT active)
+    if (_listening) return;
     await _tts.stop();
     final text = _items[_index].sentence;
     await _tts.speak(text);
+  }
+
+  void _maybeAutoplayFirst() {
+    if (_firstAutoplayDone) return;
+    if (!mounted) return;
+    if (_listening) return; // respect STT
+    if (_items.isEmpty) return;
+    _firstAutoplayDone = true; // set first to avoid double triggers
+    // Small delayed start can improve reliability on some devices
+    Future<void>.delayed(const Duration(milliseconds: 80), () {
+      if (!mounted) return;
+      _speak();
+    });
   }
 
   Future<void> _toggleListen() async {
@@ -297,9 +320,9 @@ class _SpeakingPageState extends State<SpeakingPage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       IconButton(
-                        onPressed: _speak,
+                        onPressed: _listening ? null : _speak,
                         icon: const Icon(Icons.volume_up),
-                        tooltip: 'TTS 재생',
+                        tooltip: _listening ? '스피킹 중에는 재생할 수 없어요' : 'TTS 재생',
                       ),
                       const SizedBox(width: 12),
                       FilledButton.icon(
