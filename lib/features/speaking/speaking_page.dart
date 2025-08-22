@@ -24,11 +24,16 @@ class _SpeakingPageState extends State<SpeakingPage> {
   bool _sttAvailable = false;
   bool _listening = false;
   bool _firstAutoplayDone = false;
+  bool _completed = false;
+  bool _passHandled = false; // ensure pass handled once per card
+  bool _passTtsPlayed = false; // ensure pass TTS plays once per card
+  int _round = 0; // 0,1,2 for 3 rounds
   int _index = 0;
   late List<ExampleItem> _items;
   late List<String> _tokens; // normalized tokens (non-empty)
   late List<String> _displayTokens; // original tokens for display
   List<bool> _matchedFlags = const []; // per display token matched flag
+  List<bool> _maskFlags = const []; // per display token masked flag
   int _matchedCount = 0; // number of matched normalized tokens
 
   @override
@@ -102,7 +107,10 @@ class _SpeakingPageState extends State<SpeakingPage> {
     _displayTokens = pair.display;
     _tokens = pair.norm;
     _matchedFlags = List<bool>.filled(_displayTokens.length, false);
+    _maskFlags = _computeMaskFlags(_displayTokens, _round);
     _matchedCount = 0;
+    _passHandled = false;
+    _passTtsPlayed = false;
     setState(() {});
   }
 
@@ -116,12 +124,72 @@ class _SpeakingPageState extends State<SpeakingPage> {
     return (display: words, norm: norm);
   }
 
-  Future<void> _speak() async {
-    // Block TTS while listening (STT active)
-    if (_listening) return;
+  Future<void> _speak({bool force = false}) async {
+    // Block TTS while listening or in round 3 unless forced
+    if ((_listening || _round == 2) && !force) return;
+    if (_listening) {
+      try {
+        await _stt.cancel();
+      } catch (_) {}
+      if (mounted) setState(() => _listening = false);
+    }
     await _tts.stop();
     final text = _items[_index].sentence;
     await _tts.speak(text);
+  }
+
+  List<bool> _computeMaskFlags(List<String> displayTokens, int round) {
+    // Round 1: no mask; Round 2: partial mask; Round 3: full mask for content tokens
+    final flags = List<bool>.filled(displayTokens.length, false);
+    if (round == 0) return flags;
+    // Determine which positions are content tokens (norm not empty)
+    final contentIdx = <int>[];
+    for (int i = 0; i < displayTokens.length; i++) {
+      final norm = displayTokens[i].toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (norm.isNotEmpty) contentIdx.add(i);
+    }
+    if (contentIdx.isEmpty) return flags;
+    if (round == 2) {
+      for (final i in contentIdx) {
+        flags[i] = true;
+      }
+      return flags;
+    }
+    // round == 1: partial mask ~35% of content tokens, prefer length > 2
+    final sentence = _items[_index].sentence;
+    final baseHash = sentence.hashCode;
+    int picked = 0;
+    final pickedIdx = <int>[];
+    for (final i in contentIdx) {
+      final raw = displayTokens[i];
+      final norm = raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      final lenOk = norm.length > 2;
+      final seed = (baseHash ^ (i * 1103515245 + 12345)) & 0x7fffffff;
+      final pct = seed % 100; // 0..99
+      final choose = pct < (lenOk ? 35 : 20); // bias toward longer tokens
+      if (choose) {
+        flags[i] = true;
+        picked++;
+        pickedIdx.add(i);
+      }
+    }
+    // Ensure at least 2 masked when possible (>=2 content tokens)
+    final minRequired = contentIdx.length >= 2 ? 2 : (contentIdx.isNotEmpty ? 1 : 0);
+    if (picked < minRequired) {
+      // Prefer longer tokens first among remaining
+      final remaining = contentIdx.where((i) => !pickedIdx.contains(i)).toList();
+      remaining.sort((a, b) {
+        int la = displayTokens[a].replaceAll(RegExp(r'[^a-z0-9]'), '').length;
+        int lb = displayTokens[b].replaceAll(RegExp(r'[^a-z0-9]'), '').length;
+        return lb.compareTo(la);
+      });
+      for (final i in remaining) {
+        flags[i] = true;
+        picked++;
+        if (picked >= minRequired) break;
+      }
+    }
+    return flags;
   }
 
   void _maybeAutoplayFirst() {
@@ -156,7 +224,8 @@ class _SpeakingPageState extends State<SpeakingPage> {
             .where((e) => e.isNotEmpty)
             .toList();
         _recomputeMatches(recTokens);
-        if (_matchedCount >= _tokens.length) {
+        if (_matchedCount >= _tokens.length && !_passHandled) {
+          _passHandled = true;
           _autoPass();
         }
       },
@@ -209,6 +278,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
 
   void _checkPass() {
     if (_matchedCount >= _tokens.length) {
+      if (!_passHandled) _passHandled = true;
       _showPassAndNext();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -226,7 +296,14 @@ class _SpeakingPageState extends State<SpeakingPage> {
   }
 
   void _showPassAndNext({bool auto = false}) {
-    // 안내 스낵바 제거: 사용자는 '다음' 버튼으로만 진행
+    // Autoplay TTS only once per pass
+    if (_passTtsPlayed) return;
+    _passTtsPlayed = true;
+    // Use a slight delay to avoid contention with STT teardown
+    Future<void>.delayed(const Duration(milliseconds: 80), () {
+      if (!mounted) return;
+      _speak(force: true);
+    });
   }
 
   void _next() {
@@ -240,12 +317,25 @@ class _SpeakingPageState extends State<SpeakingPage> {
         _index++;
       });
       _prepareCard();
-      _speak();
+      if (_round != 2) {
+        _speak();
+      }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('모든 예문을 완료했습니다.')),
-      );
-      Navigator.of(context).maybePop();
+      if (_round + 1 < 3) {
+        setState(() {
+          _index = 0;
+          _round++;
+        });
+        _prepareCard();
+        if (_round != 2) {
+          _speak();
+        }
+      } else {
+        // Show completion inside the card; do not auto-pop
+        setState(() {
+          _completed = true;
+        });
+      }
     }
   }
 
@@ -261,7 +351,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
     const double cardRadius = 24.0;
 
     final item = _items[_index];
-    final progress = '${_index + 1}/${_items.length}';
+    final progress = '${_round * _items.length + _index + 1}/${_items.length * 3}';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -293,50 +383,85 @@ class _SpeakingPageState extends State<SpeakingPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        runSpacing: 6,
-                        spacing: 6,
-                        children: [
-                          for (int i = 0; i < _displayTokens.length; i++)
-                            _WordChip(
-                              text: _displayTokens[i],
-                              matched: (i < _matchedFlags.length) ? _matchedFlags[i] : false,
+                  if (_completed)
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Text('완료', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
+                            SizedBox(height: 12),
+                            Text(
+                              '모든 예문을 완료했어요! 수고하셨어요 👏',
+                              style: TextStyle(fontSize: 16, color: Color(0xFF475569)),
+                              textAlign: TextAlign.center,
                             ),
-                        ],
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        item.meaning,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 16, color: Color(0xFF475569)),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        onPressed: _listening ? null : _speak,
-                        icon: const Icon(Icons.volume_up),
-                        tooltip: _listening ? '스피킹 중에는 재생할 수 없어요' : 'TTS 재생',
-                      ),
-                      const SizedBox(width: 12),
-                      FilledButton.icon(
-                        onPressed: _sttAvailable ? _toggleListen : null,
-                        icon: Icon(_listening ? Icons.stop : Icons.mic),
-                        label: Text(_listening ? '스피킹 종료' : '스피킹 시작'),
-                      ),
-                      const SizedBox(width: 12),
-                      FilledButton.tonal(
-                        onPressed: _matchedCount >= _tokens.length ? _next : null,
-                        child: const Text('다음'),
-                      ),
-                    ],
-                  )
+                    )
+                  else ...[
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          runSpacing: 6,
+                          spacing: 6,
+                          children: [
+                            for (int i = 0; i < _displayTokens.length; i++)
+                              _WordChip(
+                                text: _displayTokens[i],
+                                matched: (i < _matchedFlags.length) ? _matchedFlags[i] : false,
+                                masked: (i < _maskFlags.length) ? _maskFlags[i] : false,
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          item.meaning,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 16, color: Color(0xFF475569)),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (_completed)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        FilledButton(
+                          onPressed: () {
+                            Navigator.of(context).popUntil((route) => route.isFirst);
+                          },
+                          child: const Text('돌아가기'),
+                        ),
+                      ],
+                    )
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          onPressed: (_listening || _round == 2) ? null : _speak,
+                          icon: const Icon(Icons.volume_up),
+                          tooltip: _round == 2
+                              ? '라운드 3에서는 TTS를 사용할 수 없어요'
+                              : (_listening ? '스피킹 중에는 재생할 수 없어요' : 'TTS 재생'),
+                        ),
+                        const SizedBox(width: 12),
+                        FilledButton.icon(
+                          onPressed: _sttAvailable ? _toggleListen : null,
+                          icon: Icon(_listening ? Icons.stop : Icons.mic),
+                          label: Text(_listening ? '스피킹 종료' : '스피킹 시작'),
+                        ),
+                        const SizedBox(width: 12),
+                        FilledButton.tonal(
+                          onPressed: _matchedCount >= _tokens.length ? _next : null,
+                          child: Text((_round == 2 && _index == _items.length - 1) ? '완료' : '다음'),
+                        ),
+                      ],
+                    )
                 ],
               ),
             ),
@@ -350,10 +475,14 @@ class _SpeakingPageState extends State<SpeakingPage> {
 class _WordChip extends StatelessWidget {
   final String text;
   final bool matched;
-  const _WordChip({required this.text, required this.matched});
+  final bool masked;
+  const _WordChip({required this.text, required this.matched, required this.masked});
   @override
   Widget build(BuildContext context) {
-    final bg = matched ? Colors.green.shade100 : Colors.grey.shade200;
+    final bool hide = masked && !matched;
+    final bg = matched
+        ? Colors.green.shade100
+        : (hide ? Colors.grey.shade300 : Colors.grey.shade200);
     final fg = matched ? Colors.green.shade900 : Colors.black87;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -361,7 +490,10 @@ class _WordChip extends StatelessWidget {
         color: bg,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(text, style: TextStyle(color: fg, fontSize: 18, height: 1.2)),
+      child: Text(
+        hide ? '•••' : text,
+        style: TextStyle(color: hide ? Colors.transparent.withOpacity(0.0) : fg, fontSize: 18, height: 1.2),
+      ),
     );
   }
 }
