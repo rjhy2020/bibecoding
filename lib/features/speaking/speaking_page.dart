@@ -1,6 +1,8 @@
 import 'dart:math' as math;
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
@@ -19,6 +21,8 @@ class SpeakingPage extends StatefulWidget {
 }
 
 class _SpeakingPageState extends State<SpeakingPage> {
+  static const int _kTimeoutSec = 30;
+  static const double _kPassThreshold = 0.5;
   final _tts = FlutterTts();
   final _stt = stt.SpeechToText();
   bool _sttAvailable = false;
@@ -35,6 +39,13 @@ class _SpeakingPageState extends State<SpeakingPage> {
   List<bool> _matchedFlags = const []; // per display token matched flag
   List<bool> _maskFlags = const []; // per display token masked flag
   int _matchedCount = 0; // number of matched normalized tokens
+  // Timeout / judgement
+  Timer? _timeoutTimer;
+  Timer? _countdownTimer;
+  int _remainSec = 0;
+  bool _timedOut = false;
+  bool _successPulse = false;
+  bool _failPulse = false;
 
   @override
   void initState() {
@@ -111,6 +122,10 @@ class _SpeakingPageState extends State<SpeakingPage> {
     _matchedCount = 0;
     _passHandled = false;
     _passTtsPlayed = false;
+    _timedOut = false;
+    _remainSec = 0;
+    _successPulse = false;
+    _failPulse = false;
     setState(() {});
   }
 
@@ -210,11 +225,13 @@ class _SpeakingPageState extends State<SpeakingPage> {
     if (_listening) {
       await _stt.cancel();
       setState(() => _listening = false);
+      _clearTimeouts();
       _checkPass();
       return;
     }
     await _tts.stop();
     setState(() => _listening = true);
+    _startTimeout();
     await _stt.listen(
       onResult: (result) {
         final txt = result.recognizedWords.toLowerCase();
@@ -292,6 +309,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
       await _stt.cancel();
       setState(() => _listening = false);
     }
+    _clearTimeouts();
     _showPassAndNext(auto: true);
   }
 
@@ -305,6 +323,68 @@ class _SpeakingPageState extends State<SpeakingPage> {
       _speak(force: true);
     });
   }
+  void _startTimeout() {
+    _clearTimeouts();
+    _timedOut = false;
+    _remainSec = _kTimeoutSec;
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return;
+      if (_remainSec > 0) {
+        setState(() => _remainSec--);
+      }
+    });
+    _timeoutTimer = Timer(Duration(seconds: _kTimeoutSec), _onTimeout);
+  }
+
+  void _clearTimeouts() {
+    _timeoutTimer?.cancel();
+    _timeoutTimer = null;
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+  }
+
+  void _onTimeout() {
+    if (!mounted) return;
+    _timedOut = true;
+    _clearTimeouts();
+    if (_listening) {
+      _stt.cancel();
+      _listening = false;
+    }
+    final total = _tokens.isEmpty ? 1 : _tokens.length;
+    final ratio = _matchedCount / total;
+    if (ratio >= _kPassThreshold) {
+      _playSuccessEffect();
+    } else {
+      _playFailEffect();
+    }
+    setState(() {});
+  }
+
+  void _playSuccessEffect() {
+    HapticFeedback.mediumImpact();
+    setState(() => _successPulse = true);
+    Timer(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
+      setState(() => _successPulse = false);
+    });
+  }
+
+  void _playFailEffect() {
+    HapticFeedback.heavyImpact();
+    setState(() => _failPulse = true);
+    Timer(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      setState(() => _failPulse = false);
+    });
+  }
+
+  String _fmtRemainTime() {
+    final s = _remainSec.clamp(0, 599);
+    final mm = (s ~/ 60).toString().padLeft(2, '0');
+    final ss = (s % 60).toString().padLeft(2, '0');
+    return '$mm:$ss';
+  }
 
   void _next() {
     // Ensure immediate stop before switching to next item
@@ -312,6 +392,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
       _stt.cancel();
       setState(() => _listening = false);
     }
+    _clearTimeouts();
     if (_index + 1 < _items.length) {
       setState(() {
         _index++;
@@ -363,17 +444,29 @@ class _SpeakingPageState extends State<SpeakingPage> {
         child: SizedBox(
           width: cardWidth,
           height: cardHeight,
-          child: Container(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(cardRadius),
-              border: Border.all(color: const Color(0xFF0F172A).withOpacity(0.08)),
+              border: Border.all(
+                color: _successPulse
+                    ? Colors.green.withOpacity(0.6)
+                    : (_failPulse
+                        ? Colors.red.withOpacity(0.6)
+                        : const Color(0xFF0F172A).withOpacity(0.08)),
+                width: _successPulse || _failPulse ? 2.0 : 1.0,
+              ),
               boxShadow: [
                 BoxShadow(
                   offset: Offset(0, shadowOffsetY),
                   blurRadius: shadowBlur,
                   spreadRadius: shadowSpread,
-                  color: const Color(0xFF0F172A).withOpacity(0.12),
+                  color: (_successPulse
+                          ? Colors.green
+                          : (_failPulse ? Colors.red : const Color(0xFF0F172A)))
+                      .withOpacity(0.12),
                 ),
               ],
             ),
@@ -439,26 +532,44 @@ class _SpeakingPageState extends State<SpeakingPage> {
                       ],
                     )
                   else
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    Column(
                       children: [
-                        IconButton(
-                          onPressed: (_listening || _round == 2) ? null : _speak,
-                          icon: const Icon(Icons.volume_up),
-                          tooltip: _round == 2
-                              ? '라운드 3에서는 TTS를 사용할 수 없어요'
-                              : (_listening ? '스피킹 중에는 재생할 수 없어요' : 'TTS 재생'),
-                        ),
-                        const SizedBox(width: 12),
-                        FilledButton.icon(
-                          onPressed: _sttAvailable ? _toggleListen : null,
-                          icon: Icon(_listening ? Icons.stop : Icons.mic),
-                          label: Text(_listening ? '스피킹 종료' : '스피킹 시작'),
-                        ),
-                        const SizedBox(width: 12),
-                        FilledButton.tonal(
-                          onPressed: _matchedCount >= _tokens.length ? _next : null,
-                          child: Text((_round == 2 && _index == _items.length - 1) ? '완료' : '다음'),
+                        if (_listening && !_timedOut)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              '남은시간 ${_fmtRemainTime()}',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _remainSec <= 10
+                                    ? Colors.red
+                                    : (_remainSec <= 20 ? Colors.orange : Colors.grey[700]),
+                              ),
+                            ),
+                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              onPressed: (_listening || _round == 2) ? null : _speak,
+                              icon: const Icon(Icons.volume_up),
+                              tooltip: _round == 2
+                                  ? '라운드 3에서는 TTS를 사용할 수 없어요'
+                                  : (_listening ? '스피킹 중에는 재생할 수 없어요' : 'TTS 재생'),
+                            ),
+                            const SizedBox(width: 12),
+                            FilledButton.icon(
+                              onPressed: _sttAvailable ? _toggleListen : null,
+                              icon: Icon(_listening ? Icons.stop : Icons.mic),
+                              label: Text(_listening ? '스피킹 종료' : '스피킹 시작'),
+                            ),
+                            const SizedBox(width: 12),
+                            FilledButton.tonal(
+                              onPressed: (_matchedCount >= _tokens.length || _timedOut) ? _next : null,
+                              child: Text((_round == 2 && _index == _items.length - 1) ? '완료' : '다음'),
+                            ),
+                          ],
                         ),
                       ],
                     )
