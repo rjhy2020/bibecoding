@@ -6,7 +6,7 @@ import 'key_provider.dart';
 class OpenAIChatService {
   // 로컬 하드코딩 오버라이드: 여기에 키를 넣으면 이 값이 최우선으로 사용됩니다.
   // 예) static const String kLocalApiKey = 'sk-...';
-  static const String kLocalApiKey = '';
+  static const String kLocalApiKey = '-';
   // 키는 외부 파일/환경변수에서 로드합니다(웹: --dart-define)
   static const String _baseUrl = 'https://api.openai.com/v1/chat/completions';
   static const String _model = 'gpt-4o'; // 비용 절감 시 'gpt-4o-mini'
@@ -176,6 +176,7 @@ class OpenAIChatService {
 -   Grammar Explanations: Keep grammar descriptions concise and clear, focusing on the core concepts to avoid misunderstanding.
 -   The very last line of your output must be the English pattern enclosed in double curly braces, like `{{English Pattern}}`, and nothing else.( '9) 영어패턴' 이런거 출력하지마)
 -   At the end, print it out like this ((English sentence)). And don't create anything.( '10)영어문장' 이런거 출력하지마)
+-   영어 표현을 생성할때 반드시 대안을 생성해. 그리고 마지막에 대안에 대해 설명해드릴까요? 이런식으로 역질문을 하도록해. 그리고 대안 문장에 대해서 설명할때에는 그냥 설명하지 말고 이 룰과 출력형식을 따라. 대신 대안문장은 생성하지 말고
 
 **Analysis Guidelines (Apply these internally):**
 -   Analyze the input Korean sentence for its core meaning (e.g., statement of fact, emotional intensity, preference, habit), conversational context (formality), and lexical tone (casual, neutral, formal).
@@ -223,11 +224,14 @@ One-line context description:
 Briefly explain 3-5 key vocabulary words.
 Example: going (gerund), home (used without 'to'), favorite (most liked), thing (item/concept), in the world (for emphasis)
 
-9) 영어문장 패턴
+9) 대안에 대한 설명도 해드릴까요?
+
+10) 영어문장 패턴
 {{[The English Pattern from section 2]}}
 
-10) 처음 영어문장
+11) 처음 영어문장
 ((The English Sentence from section 1))
+
 
 ---
 
@@ -271,8 +275,11 @@ favorite: 가장 좋아하는.
 thing: 여기서는 '것'을 뜻하는 아주 일반적인 단어예요.
 in the world: 세상에서. 감정을 강조하는 표현으로 자주 씁니다.
 
+대안 문장에 대해 추가로 설명을 해드릴까요?
+
 ((Going home is my favorite thing in the world.))
 {{[동명사] + is my favorite thing in the world}}
+
 
 ---
 

@@ -21,7 +21,9 @@ class SpeakingPage extends StatefulWidget {
 }
 
 class _SpeakingPageState extends State<SpeakingPage> {
-  static const int _kTimeoutSec = 15;
+  // Inactivity timer behavior
+  static const int _kInitialInactivitySec = 30; // no input yet
+  static const int _kInactivityAfterInputSec = 5; // after any input
   static const double _kPassThreshold = 0.5;
   final _tts = FlutterTts();
   final _stt = stt.SpeechToText();
@@ -41,9 +43,8 @@ class _SpeakingPageState extends State<SpeakingPage> {
   List<bool> _maskFlags = const []; // per display token masked flag
   int _matchedCount = 0; // number of matched normalized tokens
   // Timeout / judgement
-  Timer? _timeoutTimer;
-  Timer? _countdownTimer;
-  int _remainSec = 0;
+  Timer? _inactivityTimer; // replaces previous timeout/countdown timers
+  bool _hadAnyInput = false; // whether any speech input was detected
   bool _timedOut = false;
   bool _successPulse = false;
   bool _failPulse = false;
@@ -126,7 +127,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
     _passTtsPlayed = false;
     _passEffectPlayed = false;
     _timedOut = false;
-    _remainSec = 0;
+    _hadAnyInput = false;
     _successPulse = false;
     _failPulse = false;
     _revealMasked = false;
@@ -231,21 +232,30 @@ class _SpeakingPageState extends State<SpeakingPage> {
     if (_listening) {
       await _stt.cancel();
       setState(() => _listening = false);
-      _clearTimeouts();
+      _clearInactivityTimer();
       _checkPass();
       return;
     }
     await _tts.stop();
     setState(() => _listening = true);
-    _startTimeout();
+    _startInactivityTimer(_kInitialInactivitySec);
     await _stt.listen(
       onResult: (result) {
+        // Guard: ignore any late results after pass/timeout or when not listening
+        if (!_listening || _passHandled || _timedOut) {
+          return;
+        }
         final txt = result.recognizedWords.toLowerCase();
         final recTokens = txt
             .split(RegExp(r'\s+'))
             .map((e) => e.replaceAll(RegExp(r'[^a-z0-9]'), ''))
             .where((e) => e.isNotEmpty)
             .toList();
+        // Any input (not necessarily correct) resets inactivity timer to 5s
+        if (txt.trim().isNotEmpty) {
+          if (!_hadAnyInput) _hadAnyInput = true;
+          _restartInactivityTimer(_kInactivityAfterInputSec);
+        }
         _recomputeMatches(recTokens);
         if (_matchedCount >= _tokens.length && !_passHandled) {
           _passHandled = true;
@@ -324,7 +334,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
       await _stt.cancel();
       setState(() => _listening = false);
     }
-    _clearTimeouts();
+    _clearInactivityTimer();
     _showPassAndNext(auto: true);
   }
 
@@ -346,30 +356,29 @@ class _SpeakingPageState extends State<SpeakingPage> {
       }
     });
   }
-  void _startTimeout() {
-    _clearTimeouts();
+  void _startInactivityTimer(int seconds) {
+    _clearInactivityTimer();
     _timedOut = false;
-    _remainSec = _kTimeoutSec;
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) return;
-      if (_remainSec > 0) {
-        setState(() => _remainSec--);
-      }
-    });
-    _timeoutTimer = Timer(Duration(seconds: _kTimeoutSec), _onTimeout);
+    _inactivityTimer = Timer(Duration(seconds: seconds), _onTimeout);
   }
 
-  void _clearTimeouts() {
-    _timeoutTimer?.cancel();
-    _timeoutTimer = null;
-    _countdownTimer?.cancel();
-    _countdownTimer = null;
+  void _restartInactivityTimer(int seconds) {
+    _startInactivityTimer(seconds);
+  }
+
+  void _clearInactivityTimer() {
+    _inactivityTimer?.cancel();
+    _inactivityTimer = null;
   }
 
   void _onTimeout() {
     if (!mounted) return;
+    // Guard: if already passed or not actively listening, ignore spurious timeout
+    if (_passHandled || !_listening) {
+      return;
+    }
     _timedOut = true;
-    _clearTimeouts();
+    _clearInactivityTimer();
     if (_listening) {
       _stt.cancel();
       _listening = false;
@@ -404,20 +413,13 @@ class _SpeakingPageState extends State<SpeakingPage> {
     });
   }
 
-  String _fmtRemainTime() {
-    final s = _remainSec.clamp(0, 599);
-    final mm = (s ~/ 60).toString().padLeft(2, '0');
-    final ss = (s % 60).toString().padLeft(2, '0');
-    return '$mm:$ss';
-  }
-
   void _next() {
     // Ensure immediate stop before switching to next item
     if (_listening) {
       _stt.cancel();
       setState(() => _listening = false);
     }
-    _clearTimeouts();
+    _clearInactivityTimer();
     if (_index + 1 < _items.length) {
       setState(() {
         _index++;
@@ -560,20 +562,6 @@ class _SpeakingPageState extends State<SpeakingPage> {
                   else
                     Column(
                       children: [
-                        if (_listening && !_timedOut)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Text(
-                              '남은시간 ${_fmtRemainTime()}',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: _remainSec <= 10
-                                    ? Colors.red
-                                    : (_remainSec <= 20 ? Colors.orange : Colors.grey[700]),
-                              ),
-                            ),
-                          ),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [

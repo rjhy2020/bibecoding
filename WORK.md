@@ -1,44 +1,45 @@
-WORK PLAN — 스피킹: 매칭 고정 + 중복 매칭 + 라운드별 TTS 정책
+# 스피킹: 통과 후 5초 뒤 재임팩트 버그 수정 계획 (승인 대기)
 
-목표
-- 매칭 고정: STT 부분결과가 바뀌어도 한 번 맞춘 토큰은 계속 초록 유지(취소됨 방지).
-- 중복/부분 매칭: 인식된 한 토큰이 여러 타깃 토큰을 동시에 만족하면 모두 매칭(예: ‘am’ → ‘am’과 ‘6am’ 둘 다 초록).
-- 라운드별 TTS: Round1(첫 페이즈)엔 카드 진입 시 1회만 자동 재생, 통과 시 TTS 없음. Round2/3(두·세 번째)엔 진입 자동 재생 없음, 통과 시 TTS 1회 재생.
+## 증상
+- 스피킹 라운드에서 통과 처리(성공 임팩트) 후, 약 5초 뒤에 동일한 성공 임팩트가 한 번 더 발생함.
 
-범위
-- `lib/features/speaking/speaking_page.dart` 내부 매칭/tts 트리거 로직만 수정. 다른 화면/서비스 영향 없음.
+## 원인 가설
+- 통과 직후 `_autoPass()`에서 STT 취소 및 타이머 해제는 수행되나,
+  직후 유입되는 STT `onResult`(지연된 partial 결과)가 `recognizedWords` 비어있지 않음으로 판단되어
+  `_restartInactivityTimer(5)`가 다시 설정됨.
+- 이후 5초 뒤 `_onTimeout()`이 호출되고, 이 때 `_matchedCount/total >= _kPassThreshold` 조건을 만족하여
+  `_playSuccessEffect()`가 재호출되며 재임팩트 발생.
+- 추가로 `_onTimeout()`에 통과 이후(또는 리스닝 중이 아님) 무시하는 방어 로직이 없음.
 
-설계/변경 사항
-1) 매칭 고정(Sticky)
-   - `_recomputeMatches(recNormTokens)`에서 새 플래그를 "이전 매칭을 유지한 채" 갱신(nextFlags = oldFlags 복사).
-   - 이미 `true`인 인덱스는 그대로 유지(부분결과로 인해 해제되지 않음).
+## 수정 전략
+1) onResult 가드 추가
+   - `onResult` 콜백 진입 시 `_listening == false` 또는 `_passHandled == true` 또는 `_timedOut == true`면 즉시 return.
+   - 통과 이후/리스닝 종료 이후에는 입력에 의해 타이머가 재시작되지 않도록 함.
+2) 타임아웃 가드 추가
+   - `_onTimeout()` 시작부에서 `_passHandled == true` 또는 `_listening == false`면 조용히 return.
+   - 필요 시 `_passEffectPlayed`가 이미 true인 경우에도 재임팩트를 방지.
+3) 정리 포인트 재점검
+   - 통과 경로(`_autoPass()`/`_showPassAndNext()`)에서 `_clearInactivityTimer()`가 항상 호출되는지 다시 확인.
+   - 다음 카드 이동(`_next()`), 리스닝 중지 경로에서도 타이머가 해제되는지 확인.
 
-2) 중복/부분 매칭 허용
-   - `bool _tokensMatch(String target, String rec)` 유틸 추가:
-     - 정확 일치면 true.
-     - `rec.length >= 2`이고 `target.contains(rec)` 또는 `rec.contains(target)`이면 true(예: am ↔ 6am).
-   - 매칭 시 "사용량(used) 카운트" 제거: 한 인식 토큰이 여러 타깃 토큰을 만족하면 각 타깃을 모두 true 처리.
+## 변경 파일/범위
+- 파일: `lib/features/speaking/speaking_page.dart`
+- 변경 내용: STT `onResult` 및 `_onTimeout()`에 가드 로직 추가, 중복 임팩트 방지.
 
-3) 라운드별 TTS 정책
-   - 진입 자동재생: `_maybeAutoplayFirst()`에서 `_round == 0`일 때만 `_speak()` 실행. Round1은 자동, Round2/3은 자동 OFF.
-   - 통과 시 재생: `_showPassAndNext()`에서 `_round >= 1`일 때만 `_speak(force: true)` 실행. Round1은 통과 시 재생 없음.
-   - 디바운스: 기존 `_passTtsPlayed` 유지(카드당 1회 보장). 성공 임팩트는 카드당 1회 유지.
+## 테스트 시나리오
+1) 통과 직후: 5초 대기해도 재임팩트가 발생하지 않음.
+2) 통과 이전: 입력이 멈추고 5초 경과 시 타임아웃 정상 동작(성공/실패 임팩트 1회만).
+3) 리스닝 종료 버튼으로 중단: 이후 타임아웃/임팩트 발생하지 않음.
+4) 다음 카드 이동: 이전 카드의 타이머/임팩트 잔여 이벤트가 발생하지 않음.
+5) 연속 발화 중 통과: 통과 이후 들어오는 지연 `onResult`가 무시됨(타이머 리셋 없음).
 
-수락 기준(DoD)
-- Sticky: STT 부분 인식이 변해도 초록으로 변한 단어가 다시 회색으로 돌아가지 않음.
-- 중복/부분: 문장 "I am wake up at 6am"에서 ‘am’만 말해도 ‘am’과 ‘6am’이 모두 초록으로 변함.
-- TTS 정책: Round1은 시작 시 1회만 자동 재생되고, 통과 시 TTS 없음. Round2/3는 시작 시 자동 재생 없고, 통과 시에만 1회 TTS 재생.
+## 제외 범위
+- STT 정확도, 음성 레벨 분석 고도화, UX 애니메이션 재설계는 범위 외.
 
-테스트
-- Sticky 검증: 동일 카드에서 onResult가 몇 차례 바뀌어도 이미 true인 토큰은 유지.
-- 부분 매칭 검증: ‘am’ 인식으로 ‘am’/’6am’ 모두 true.
-- TTS 트리거 검증: 각 라운드별 자동/통과 트리거가 명세대로 동작.
+## 작업 단계
+1) onResult 가드 추가(통과/리스닝 종료/타임아웃 이후 무시)
+2) _onTimeout 가드 추가(통과/리스닝 종료 상태면 무시)
+3) 수동 테스트(시나리오 1~5)
+4) `flutter analyze` 및 `dart format .` 확인
 
-작업 단계
-1) `_recomputeMatches`를 sticky + 중복 허용 방식으로 재작성.
-2) `_tokensMatch` 유틸 추가.
-3) `_maybeAutoplayFirst`와 `_showPassAndNext`에 라운드별 TTS 조건 추가.
-4) 수동/실행 테스트 및 로그 확인.
-
-상태
-- Proposed — 승인 시 반영(소요 40~70분, 리스크 낮음: 로직 국소 변경).
+승인해 주시면 위 단계대로 수정 적용하겠습니다.

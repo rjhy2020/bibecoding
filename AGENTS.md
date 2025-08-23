@@ -44,3 +44,5 @@ When you do a task and commit it, make sure the title is in Korean.
 - Never commit secrets; route LLM/STT via Functions
 - Use Firestore rules (least privilege) and App Check
 - Use per‑env config (CI or untracked `.env`); do not hard‑code keys
+
+작업하기 전엔 항상 work.md에 계획을 적고 승인을 기다려.
