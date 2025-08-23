@@ -1,61 +1,44 @@
-WORK PLAN — 스피킹: 30초 타임아웃 + 50% 판정 + 효과
+WORK PLAN — 스피킹: 매칭 고정 + 중복 매칭 + 라운드별 TTS 정책
 
 목표
-- 사용자가 30초 안에 전체 문장을 완주하지 못하면, 현재 매칭률로 자동 판정한다.
-- 매칭률 ≥ 50%: 성공으로 간주. < 50%: 실패로 간주. 이후 ‘다음’으로 진행 가능.
-- 성공/실패에 따라 간단한 시각/햅틱 효과를 제공한다.
+- 매칭 고정: STT 부분결과가 바뀌어도 한 번 맞춘 토큰은 계속 초록 유지(취소됨 방지).
+- 중복/부분 매칭: 인식된 한 토큰이 여러 타깃 토큰을 동시에 만족하면 모두 매칭(예: ‘am’ → ‘am’과 ‘6am’ 둘 다 초록).
+- 라운드별 TTS: Round1(첫 페이즈)엔 카드 진입 시 1회만 자동 재생, 통과 시 TTS 없음. Round2/3(두·세 번째)엔 진입 자동 재생 없음, 통과 시 TTS 1회 재생.
 
 범위
-- `lib/features/speaking/speaking_page.dart`만 수정(상태/타이머/UI/효과). 서비스/데이터 변경 없음.
+- `lib/features/speaking/speaking_page.dart` 내부 매칭/tts 트리거 로직만 수정. 다른 화면/서비스 영향 없음.
 
-설계/상태
-- 상수: `kTimeoutSec = 30`, `kPassThreshold = 0.5`.
-- 상태 추가:
-  - `Timer? _timeoutTimer;` — 30초 만료 타이머(만료 시 판정)
-  - `Timer? _countdownTimer; int _remainSec;` — UI 카운트다운(1초 주기)
-  - `bool _timedOut = false;` — 타임아웃 발생 여부 표시(효과/버튼 상태 분기용)
-  - `enum Judge { none, pass, fail }` or `Judge? _judge;`
-- 시작/종료 타이밍:
-  - STT 시작 시 타이머 시작(`_startTimeout()`): `_remainSec = kTimeoutSec` 세팅 후 1초 주기 카운트다운 + 30초 후 만료 콜백
-  - STT 중지/자동 통과/카드 이동/완료 시 타이머 모두 해제(`_clearTimeouts()`)
+설계/변경 사항
+1) 매칭 고정(Sticky)
+   - `_recomputeMatches(recNormTokens)`에서 새 플래그를 "이전 매칭을 유지한 채" 갱신(nextFlags = oldFlags 복사).
+   - 이미 `true`인 인덱스는 그대로 유지(부분결과로 인해 해제되지 않음).
 
-판정 로직
-- 만료 콜백 `_onTimeout()`에서 매칭률 = `_matchedCount / _tokens.length` 계산(0으로 나눔 보호).
-- `ratio >= kPassThreshold` → `_judge = pass`로 세팅, 아니면 `fail`.
-- STT가 켜져 있으면 먼저 정지 → 효과 표시 → ‘다음’ 버튼 활성(자동 이동하지 않음).
-- 수동 조기 종료(버튼) 시 기존 로직 유지; 단, 타이머도 정리.
+2) 중복/부분 매칭 허용
+   - `bool _tokensMatch(String target, String rec)` 유틸 추가:
+     - 정확 일치면 true.
+     - `rec.length >= 2`이고 `target.contains(rec)` 또는 `rec.contains(target)`이면 true(예: am ↔ 6am).
+   - 매칭 시 "사용량(used) 카운트" 제거: 한 인식 토큰이 여러 타깃 토큰을 만족하면 각 타깃을 모두 true 처리.
 
-UI/효과
-- 카운트다운: 컨트롤 바 위/오른쪽에 `남은시간 00:SS` 표시. 10초 이하일 때 색상 경고(주황/빨강).
-- 효과:
-  - 성공: 카드 외곽선/그라데이션을 600ms 동안 초록색으로 펄스, `HapticFeedback.mediumImpact()`.
-  - 실패: 카드 살짝 좌우로 쉐이크(Transform 애니메이션, ~400ms), `HapticFeedback.heavyImpact()`.
-  - 효과는 일회성, ‘다음’ 활성화 유지.
-- 버튼:
-  - 타임아웃 후에는 `_judge` 결과와 무관하게 ‘다음’ 버튼 활성.
-  - 라벨은 그대로 ‘다음’(마지막 카드/라운드는 ‘완료’), 선택적으로 스낵바/아이콘 배지 넣기(예: 체크/엑스).
-
-변경 사항
-1) 상태/상수 추가: 타이머/잔여시간/판정 플래그 및 enum.
-2) STT 토글 연동: 시작 시 `_startTimeout()`, 중지/자동통과/이동 시 `_clearTimeouts()`.
-3) 만료 핸들러: `_onTimeout()` 구현 → 판정/효과/다음 버튼 활성.
-4) UI: 남은 시간 텍스트 추가(컨트롤 바 근처). 카드 위젯에 성공/실패 오버레이/애니메이션 분기.
-5) 안전성: `dispose()`와 카드 전환 시 타이머/애니메이션 정리.
+3) 라운드별 TTS 정책
+   - 진입 자동재생: `_maybeAutoplayFirst()`에서 `_round == 0`일 때만 `_speak()` 실행. Round1은 자동, Round2/3은 자동 OFF.
+   - 통과 시 재생: `_showPassAndNext()`에서 `_round >= 1`일 때만 `_speak(force: true)` 실행. Round1은 통과 시 재생 없음.
+   - 디바운스: 기존 `_passTtsPlayed` 유지(카드당 1회 보장). 성공 임팩트는 카드당 1회 유지.
 
 수락 기준(DoD)
-- STT 시작 후 30초 내 완주 못하면 자동 판정이 일어난다.
-- 매칭률 50% 이상이면 ‘성공’ 효과(초록 펄스 + 햅틱), 미만이면 ‘실패’ 효과(쉐이크 + 햅틱).
-- 자동 판정 이후 ‘다음’ 버튼이 활성화되며, 사용자가 눌러서 다음으로 진행한다(자동 이동 없음).
-- 타임아웃이 발생해도 앱이 멈추지 않고, 다음 카드에서 타이머가 정상 재시작된다.
+- Sticky: STT 부분 인식이 변해도 초록으로 변한 단어가 다시 회색으로 돌아가지 않음.
+- 중복/부분: 문장 "I am wake up at 6am"에서 ‘am’만 말해도 ‘am’과 ‘6am’이 모두 초록으로 변함.
+- TTS 정책: Round1은 시작 시 1회만 자동 재생되고, 통과 시 TTS 없음. Round2/3는 시작 시 자동 재생 없고, 통과 시에만 1회 TTS 재생.
 
 테스트
-- 시나리오 1: 30초 내 완주 → 기존 로직 유지(타임아웃 미발생, 자동 판정 없음).
-- 시나리오 2: 30초 경과, 매칭률 0.7 → 성공 효과 + ‘다음’ 활성.
-- 시나리오 3: 30초 경과, 매칭률 0.3 → 실패 효과 + ‘다음’ 활성.
-- 시나리오 4: 타임아웃 직전 STT 수동 종료 → 타임아웃 정리되고 이중 판정/효과가 발생하지 않음.
+- Sticky 검증: 동일 카드에서 onResult가 몇 차례 바뀌어도 이미 true인 토큰은 유지.
+- 부분 매칭 검증: ‘am’ 인식으로 ‘am’/’6am’ 모두 true.
+- TTS 트리거 검증: 각 라운드별 자동/통과 트리거가 명세대로 동작.
 
-영향 파일
-- `lib/features/speaking/speaking_page.dart`
+작업 단계
+1) `_recomputeMatches`를 sticky + 중복 허용 방식으로 재작성.
+2) `_tokensMatch` 유틸 추가.
+3) `_maybeAutoplayFirst`와 `_showPassAndNext`에 라운드별 TTS 조건 추가.
+4) 수동/실행 테스트 및 로그 확인.
 
 상태
-- Proposed — 승인 시 반영(소요 1.5~3시간, 리스크 중간: 타이머/애니메이션 동기화).
+- Proposed — 승인 시 반영(소요 40~70분, 리스크 낮음: 로직 국소 변경).

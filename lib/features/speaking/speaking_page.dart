@@ -21,7 +21,7 @@ class SpeakingPage extends StatefulWidget {
 }
 
 class _SpeakingPageState extends State<SpeakingPage> {
-  static const int _kTimeoutSec = 30;
+  static const int _kTimeoutSec = 15;
   static const double _kPassThreshold = 0.5;
   final _tts = FlutterTts();
   final _stt = stt.SpeechToText();
@@ -31,6 +31,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
   bool _completed = false;
   bool _passHandled = false; // ensure pass handled once per card
   bool _passTtsPlayed = false; // ensure pass TTS plays once per card
+  bool _passEffectPlayed = false; // ensure pass effect plays once per card
   int _round = 0; // 0,1,2 for 3 rounds
   int _index = 0;
   late List<ExampleItem> _items;
@@ -46,6 +47,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
   bool _timedOut = false;
   bool _successPulse = false;
   bool _failPulse = false;
+  bool _revealMasked = false; // reveal masked words (e.g., after timeout)
 
   @override
   void initState() {
@@ -122,10 +124,12 @@ class _SpeakingPageState extends State<SpeakingPage> {
     _matchedCount = 0;
     _passHandled = false;
     _passTtsPlayed = false;
+    _passEffectPlayed = false;
     _timedOut = false;
     _remainSec = 0;
     _successPulse = false;
     _failPulse = false;
+    _revealMasked = false;
     setState(() {});
   }
 
@@ -216,7 +220,9 @@ class _SpeakingPageState extends State<SpeakingPage> {
     // Small delayed start can improve reliability on some devices
     Future<void>.delayed(const Duration(milliseconds: 80), () {
       if (!mounted) return;
-      _speak();
+      if (_round == 0) {
+        _speak();
+      }
     });
   }
 
@@ -253,35 +259,44 @@ class _SpeakingPageState extends State<SpeakingPage> {
   }
 
   void _recomputeMatches(List<String> recNormTokens) {
-    // Build counts of recognized tokens
-    final have = <String, int>{};
-    for (final r in recNormTokens) {
-      have[r] = (have[r] ?? 0) + 1;
-    }
-    // Used counters per token while assigning to display positions (left→right)
-    final used = <String, int>{};
-    final newFlags = List<bool>.filled(_displayTokens.length, false);
-    int matched = 0;
+    // Sticky + multi-target substring matching
+    final nextFlags = List<bool>.from(
+      _matchedFlags.length == _displayTokens.length
+          ? _matchedFlags
+          : List<bool>.filled(_displayTokens.length, false),
+    );
     for (int i = 0; i < _displayTokens.length; i++) {
       final raw = _displayTokens[i];
       final norm = raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-      if (norm.isEmpty) {
-        newFlags[i] = false;
-        continue;
+      if (norm.isEmpty) continue;
+      if (nextFlags[i]) continue; // keep previously matched
+      bool hit = false;
+      for (final rec in recNormTokens) {
+        if (_tokensMatch(norm, rec)) { hit = true; break; }
       }
-      final needAvailable = (have[norm] ?? 0) > (used[norm] ?? 0);
-      if (needAvailable) {
-        newFlags[i] = true;
-        used[norm] = (used[norm] ?? 0) + 1;
-        matched++;
-      }
+      if (hit) nextFlags[i] = true;
     }
-    if (matched != _matchedCount || !_listEqualsBool(_matchedFlags, newFlags)) {
+    int matched = 0;
+    for (int i = 0; i < _displayTokens.length; i++) {
+      final norm = _displayTokens[i].toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (norm.isEmpty) continue;
+      if (i < nextFlags.length && nextFlags[i]) matched++;
+    }
+    if (matched != _matchedCount || !_listEqualsBool(_matchedFlags, nextFlags)) {
       setState(() {
-        _matchedFlags = newFlags;
+        _matchedFlags = nextFlags;
         _matchedCount = matched;
       });
     }
+  }
+
+  bool _tokensMatch(String target, String rec) {
+    if (rec.isEmpty || target.isEmpty) return false;
+    if (target == rec) return true;
+    // Allow substring match for tokens of length >= 2 (e.g., am ↔ 6am)
+    if (rec.length >= 2 && target.contains(rec)) return true;
+    if (target.length >= 2 && rec.contains(target)) return true;
+    return false;
   }
 
   bool _listEqualsBool(List<bool> a, List<bool> b) {
@@ -320,7 +335,15 @@ class _SpeakingPageState extends State<SpeakingPage> {
     // Use a slight delay to avoid contention with STT teardown
     Future<void>.delayed(const Duration(milliseconds: 80), () {
       if (!mounted) return;
-      _speak(force: true);
+      // Rounds 2 and 3 only: speak after user reads
+      if (_round >= 1) {
+        _speak(force: true);
+      }
+      // Play success effect once per pass
+      if (!_passEffectPlayed) {
+        _passEffectPlayed = true;
+        _playSuccessEffect();
+      }
     });
   }
   void _startTimeout() {
@@ -358,7 +381,9 @@ class _SpeakingPageState extends State<SpeakingPage> {
     } else {
       _playFailEffect();
     }
-    setState(() {});
+    setState(() {
+      _revealMasked = true; // reveal hidden tokens on timeout
+    });
   }
 
   void _playSuccessEffect() {
@@ -398,7 +423,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
         _index++;
       });
       _prepareCard();
-      if (_round != 2) {
+      if (_round == 0) {
         _speak();
       }
     } else {
@@ -408,7 +433,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
           _round++;
         });
         _prepareCard();
-        if (_round != 2) {
+        if (_round == 0) {
           _speak();
         }
       } else {
@@ -507,6 +532,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
                                 text: _displayTokens[i],
                                 matched: (i < _matchedFlags.length) ? _matchedFlags[i] : false,
                                 masked: (i < _maskFlags.length) ? _maskFlags[i] : false,
+                                reveal: _revealMasked,
                               ),
                           ],
                         ),
@@ -587,10 +613,11 @@ class _WordChip extends StatelessWidget {
   final String text;
   final bool matched;
   final bool masked;
-  const _WordChip({required this.text, required this.matched, required this.masked});
+  final bool reveal;
+  const _WordChip({required this.text, required this.matched, required this.masked, required this.reveal});
   @override
   Widget build(BuildContext context) {
-    final bool hide = masked && !matched;
+    final bool hide = masked && !matched && !reveal;
     final bg = matched
         ? Colors.green.shade100
         : (hide ? Colors.grey.shade300 : Colors.grey.shade200);
