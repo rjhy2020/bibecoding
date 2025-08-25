@@ -77,23 +77,15 @@ class ReviewSetRepositoryPrefs implements ReviewSetRepository {
     final idx = list.indexWhere((e) => e.id == setId);
     if (idx < 0) return;
     final base = list[idx];
-    if (rating == 2) {
-      final newReps = base.reps + 1;
-      final days = FsrsScheduler.goodIntervalDaysForReps(newReps);
-      final dueTs = FsrsScheduler.dueAtStartOfDayPlusDays(now ?? DateTime.now(), days);
-      list[idx] = base.copyWith(
-        reps: newReps,
-        lastRating: 2,
-        updatedAt: (now ?? DateTime.now()).millisecondsSinceEpoch,
-        due: dueTs,
-      );
-    } else {
-      list[idx] = base.copyWith(
-        reps: base.reps + 1,
-        lastRating: rating,
-        updatedAt: (now ?? DateTime.now()).millisecondsSinceEpoch,
-      );
-    }
+    final newReps = base.reps + 1;
+    final days = FsrsScheduler.intervalDaysForRating(newReps, rating);
+    final dueTs = FsrsScheduler.dueAtStartOfDayPlusDays(now ?? DateTime.now(), days);
+    list[idx] = base.copyWith(
+      reps: newReps,
+      lastRating: rating,
+      updatedAt: (now ?? DateTime.now()).millisecondsSinceEpoch,
+      due: dueTs,
+    );
     await _saveAll(p, list);
   }
 

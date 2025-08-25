@@ -53,8 +53,13 @@ class ReviewRepositoryPrefs implements ReviewRepository {
     if (idx < 0) return;
     final ts = (now ?? DateTime.now()).millisecondsSinceEpoch;
     ReviewCard updated;
+    final nowDt = DateTime.fromMillisecondsSinceEpoch(ts);
     if (rating == 2) {
-      updated = FsrsScheduler.applyGood(list[idx], DateTime.fromMillisecondsSinceEpoch(ts));
+      updated = FsrsScheduler.applyGood(list[idx], nowDt);
+    } else if (rating == 1) {
+      updated = FsrsScheduler.applyHard(list[idx], nowDt);
+    } else if (rating == 3) {
+      updated = FsrsScheduler.applyEasy(list[idx], nowDt);
     } else {
       updated = list[idx].copyWith(
         reps: list[idx].reps + 1,

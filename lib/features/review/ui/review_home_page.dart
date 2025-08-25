@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'package:englishplease/features/review/data/review_repository_prefs.dart';
 import 'package:englishplease/features/review/data/review_set_repository_prefs.dart';
@@ -88,15 +89,16 @@ class _ReviewHomePageState extends State<ReviewHomePage> {
     final cards = allCards.where((c) => set.itemIds.contains(c.id)).toList();
     final examples = cards.map((c) => ExampleItem(sentence: c.sentence, meaning: c.meaning)).toList(growable: false);
     try {
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => SpeakingPage(
-            examples: examples,
-            onComplete: _onSpeakingComplete,
-            onItemReviewed: _onItemReviewed,
-          ),
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SpeakingPage(
+          examples: examples,
+          currentSetReps: set.reps,
+          onCompleteRated: _onSpeakingCompleteRated,
+          onItemReviewed: _onItemReviewed,
         ),
-      );
+      ),
+    );
       // 돌아오면 리스트 갱신
       await _load();
     } finally {
@@ -108,21 +110,23 @@ class _ReviewHomePageState extends State<ReviewHomePage> {
     // 중간 저장에서는 reps를 증가시키지 않음(무시)
   }
 
-  Future<void> _onSpeakingComplete(List<ExampleItem> items) async {
-    // 세트 완료: 세트 Good(2) 스케줄 갱신 + 포함 카드들 1회만 Good 적용
+  Future<void> _onSpeakingCompleteRated(List<ExampleItem> items, int rating) async {
+    // 세트 완료: 세트 rating 스케줄 갱신 + 포함 카드들 1회만 적용
     final setId = _currentSetId;
     if (setId != null) {
+      debugPrint('[SaveFlow][Review] start | setId=$setId, items=${items.length}, rating=$rating');
       final now = DateTime.now();
-      await _setRepo.updateSetAfterReview(setId, rating: 2, now: now);
+      await _setRepo.updateSetAfterReview(setId, rating: rating, now: now);
       final s = await _setRepo.getById(setId);
       if (s != null) {
         for (final cid in s.itemIds) {
-          await _cardRepo.updateAfterReview(cid, rating: 2, now: now);
+          await _cardRepo.updateAfterReview(cid, rating: rating, now: now);
         }
       }
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('세트 복습 완료!')));
+    debugPrint('[SaveFlow][Review] done: success');
   }
 
   @override

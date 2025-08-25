@@ -6,12 +6,22 @@ import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:englishplease/models/example_item.dart';
+import 'package:englishplease/features/review/scheduler/fsrs_scheduler.dart';
 
 class SpeakingPage extends StatefulWidget {
   final List<ExampleItem> examples;
-  final ValueChanged<List<ExampleItem>>? onComplete;
+  final ValueChanged<List<ExampleItem>>? onComplete; // deprecated: prefer onCompleteRated
+  final Future<void> Function(List<ExampleItem> items, int rating)? onCompleteRated; // 1=어려움,2=보통,3=쉬움
   final ValueChanged<ExampleItem>? onItemReviewed; // 카드별 진행 중간 반영 콜백
-  const SpeakingPage({super.key, required this.examples, this.onComplete, this.onItemReviewed});
+  final int? currentSetReps; // 세트의 현재 reps(없으면 0)
+  const SpeakingPage({
+    super.key,
+    required this.examples,
+    this.onComplete,
+    this.onCompleteRated,
+    this.onItemReviewed,
+    this.currentSetReps,
+  });
 
   @override
   State<SpeakingPage> createState() => _SpeakingPageState();
@@ -544,16 +554,38 @@ class _SpeakingPageState extends State<SpeakingPage> {
                     ),
                   ],
                   if (_completed)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        FilledButton(
-                          onPressed: () {
-                            Navigator.of(context).popUntil((route) => route.isFirst);
-                          },
-                          child: const Text('돌아가기'),
-                        ),
-                      ],
+                    _RatingSelector(
+                      currentReps: widget.currentSetReps ?? 0,
+                      onSelect: (rating) async {
+                        // 중복 실행 방지 로직 제거하고 직접 실행
+                        final cbRated = widget.onCompleteRated;
+                        final cbLegacy = widget.onComplete;
+
+                        if (cbRated != null) {
+                          try {
+                            await cbRated(_items, rating);
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('저장 실패: $e')),
+                            );
+                            return; // 실패 시 현재 화면 유지
+                          }
+                        } else if (cbLegacy != null) {
+                          try {
+                            cbLegacy(_items);
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('저장 실패: $e')),
+                            );
+                            return;
+                          }
+                        }
+
+                        if (!mounted) return;
+                        Navigator.of(context).pop();
+                      },
                     )
                   else
                     Column(
@@ -646,5 +678,56 @@ class _InactivityController {
     if (_fired) return;
     _fired = true;
     onTimeout();
+  }
+}
+
+class _RatingSelector extends StatelessWidget {
+  final int currentReps; // 세트의 현재 reps
+  final Future<void> Function(int) onSelect; // 1,2,3
+  const _RatingSelector({required this.currentReps, required this.onSelect});
+
+  String _label(int rating) {
+    final nextReps = currentReps + 1;
+    final days = FsrsScheduler.intervalDaysForRating(nextReps, rating);
+    final text = days <= 0 ? '오늘' : '${days}일 뒤';
+    switch (rating) {
+      case 1:
+        return '어려움 · $text';
+      case 2:
+        return '보통 · $text';
+      case 3:
+      default:
+        return '쉬움 · $text';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const SizedBox(height: 8),
+        Text('난이도를 선택해 주세요', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            FilledButton.tonal(
+              onPressed: () { onSelect(1); },
+              child: Text(_label(1)),
+            ),
+            FilledButton(
+              onPressed: () { onSelect(2); },
+              child: Text(_label(2)),
+            ),
+            FilledButton.tonal(
+              onPressed: () { onSelect(3); },
+              child: Text(_label(3)),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }

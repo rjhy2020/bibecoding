@@ -1,0 +1,30 @@
+[33m3fd8236[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m)[m 복습 추가
+[33m6579452[m 리팩토링 및 오류수정
+[33m550f52e[m 자잘한 스피킹쪽 오류 수정
+[33mb588434[m 매칭 고정/부분-중복 매칭, 라운드별 TTS 정책 반영
+[33m7c465a9[m 스피킹 시간초과 및 효과 추가(아직 고쳐야함)
+[33m9caa2b4[m 여러 버그 수정.
+[33m918eb51[m fix: 스피킹 리스닝 수정
+[33m32d72c1[m feat: 예문 생성/스피킹 흐름 구현 + 키 관리 추가
+[33mb963855[m 스피킹 텝 만듬
+[33m4142dca[m chore: 프로젝트 전체 변경사항 커밋
+[33m77470be[m chore(security): OpenAI 키 제거 및 안전한 주입 방식 유지
+[33m4bc496f[m fix(speaking): TTS 종료 메서드 정리 및 토크나이즈 레코드 접근 수정, 자동 진행 제거\n\n- flutter_tts.shutdown() 제거, stop()만 사용\n- (_displayTokens, _tokens) 레코드 접근 방식 변경(pair.display/norm)\n- 통과 후 자동 이동 제거, 사용자 ‘다음’ 버튼으로 진행\n- errorLog.md 반영
+[33m374318e[m feat(speaking): TTS/STT 통합 + 단어별 하이라이트 및 통과/다음 플로우\n\n- SpeakingPage를 상태ful로 전환, 예문 파싱/토큰화/매칭/진행 구현\n- TTS(flutter_tts) 기본 설정 및 재생 버튼\n- STT(speech_to_text) 토글, partial 결과 기반 매칭 업데이트\n- UI: 토큰별 초록색 하이라이트, 진행 표시, 다음 버튼 활성화\n- 권한: Android RECORD_AUDIO, iOS NSMicrophoneUsageDescription 추가\n- deps: flutter_tts, speech_to_text 추가
+[33m1a53e32[m feat: 예문 생성 API 연동(OpenAI 키 재사용) + JSON 메모리 전달로 스피킹 화면 네비게이션\n\n- chat: ((...)) 마커 병행 지원 및 디버그 로그 추가\n- examples: WORK.md 프롬프트 + pattern/sentence/count 전송, 로딩 오버레이/응답 디버그\n- storage: JSON 저장 유틸 추가(웹/IO) — 현재는 비활성화, 메모리 전달로 전환\n- ui: SpeakingPage 추가, 카드 중앙 위 정렬 및 성공 시 자동 전환\n- deps/assets: flutter_tts/speech_to_text 계획 반영 준비, prompt asset 등록, pubspec 업데이트
+[33m34c4553[m fix(chat): 어시스턴트 답변 텍스트를 검정색으로 변경
+[33md35fcbd[m 프롬프트 수정
+[33mbd51211[m feat: 채팅 맥락 유지 구현 (세션 히스토리 전송)
+[33me8ef762[m feat: 한글 폰트 번들/프리로드 및 웜업 적용
+[33m5e625c9[m fix: 한글 IME 입력 안정화 및 키 보안 개선
+[33m68667ab[m feat: 채팅 기능 초기 구현 및 탭 제거
+[33m06e3953[m chore: 현재 프로젝트 변경 사항 커밋
+[33m1365ce0[m style(home): ‘복습하기’ 카드 밝기 조정 (라이트 모드에서 흰색 카드)
+[33m753a925[m fix(home): 최근 학습한 표현 옆 칩 제거
+[33m8c7dc7e[m feat(home): update KPI and quick section
+[33mb261e8a[m fix(chat/ui): correct parentheses and rebuild chat input Row; align hero search row and keyboard padding
+[33mfe49f08[m fix(ui): remove hero fixed height and unify search row to 48px; use viewInsets.bottom for keyboard padding
+[33maa010ed[m feat(chat): implement SpeakingPage with safe bottom input bar to avoid overflow
+[33medb9725[m fix(ui): prevent bottom overflow in Home with keyboard-aware padding and non-nested list
+[33m4d9c998[m feat(ui): lock app to portrait mode for phones
+[33md029fa7[m chore: save project state

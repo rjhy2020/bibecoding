@@ -203,7 +203,8 @@ class _ChatPageState extends State<ChatPage> {
             MaterialPageRoute(
               builder: (_) => SpeakingPage(
                 examples: data,
-                onComplete: _handleSpeakingComplete,
+                currentSetReps: 0,
+                onCompleteRated: _handleSpeakingCompleteRated,
               ),
             ),
           );
@@ -221,11 +222,13 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  Future<void> _handleSpeakingComplete(List<ExampleItem> examples) async {
+  Future<void> _handleSpeakingCompleteRated(List<ExampleItem> examples, int rating) async {
     try {
+      debugPrint('[SaveFlow][Chat] start | items=${examples.length}, rating=$rating');
       final now = DateTime.now();
       final ts = now.millisecondsSinceEpoch;
       final existing = await _reviewRepo.fetchAll();
+      debugPrint('[SaveFlow][Chat] fetched existing cards: ${existing.length}');
       final existingById = {for (final c in existing) c.id: c};
 
       final List<ReviewCard> toUpsert = [];
@@ -261,6 +264,7 @@ class _ChatPageState extends State<ChatPage> {
       }
 
       if (toUpsert.isNotEmpty) {
+        debugPrint('[SaveFlow][Chat] upsert new/updated cards: ${toUpsert.length}');
         await _reviewRepo.upsertAll(toUpsert);
       }
 
@@ -268,22 +272,35 @@ class _ChatPageState extends State<ChatPage> {
       final allNow = await _reviewRepo.fetchAll();
       final picked = allNow.where((c) => ids.contains(c.id)).toList();
       final title = picked.isNotEmpty ? picked.first.sentence : '학습 세트';
+      debugPrint('[SaveFlow][Chat] create review set with ${ids.length} items');
       final setId = await _setRepo.createSet(title: title, itemIds: ids, now: now);
+      debugPrint('[SaveFlow][Chat] created setId=$setId');
       // 카드에 setId 부여
       final withSet = picked.map((c) => c.copyWith(setId: setId, updatedAt: ts)).toList();
       if (withSet.isNotEmpty) {
+        debugPrint('[SaveFlow][Chat] upsert cards with setId: ${withSet.length}');
         await _reviewRepo.upsertAll(withSet);
+      }
+
+      // 평점 반영: 세트 + 카드들 1회만 적용
+      debugPrint('[SaveFlow][Chat] update set after review | rating=$rating');
+      await _setRepo.updateSetAfterReview(setId, rating: rating, now: now);
+      for (final cid in ids) {
+        debugPrint('[SaveFlow][Chat] update card after review | id=$cid, rating=$rating');
+        await _reviewRepo.updateAfterReview(cid, rating: rating, now: now);
       }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('복습 카드가 저장되었습니다.')),
       );
+      debugPrint('[SaveFlow][Chat] done: success');
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('저장 실패: $e')),
       );
+      debugPrint('[SaveFlow][Chat] error: $e');
     }
   }
 
