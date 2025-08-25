@@ -21,6 +21,12 @@ class OpenAIChatService {
   final http.Client _client;
   OpenAIChatService({http.Client? client}) : _client = client ?? http.Client();
 
+  void dispose() {
+    try {
+      _client.close();
+    } catch (_) {}
+  }
+
   Future<String> askExpression(String userQuery) async {
     final key = kLocalApiKey.isNotEmpty ? kLocalApiKey : await KeyProvider.loadOpenAIKey();
     if (key.isEmpty) {

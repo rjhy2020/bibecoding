@@ -5,16 +5,11 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-
-class ExampleItem {
-  final String sentence;
-  final String meaning;
-  ExampleItem({required this.sentence, required this.meaning});
-}
+import 'package:englishplease/models/example_item.dart';
 
 class SpeakingPage extends StatefulWidget {
-  final dynamic examples; // JSON from API (list or object)
-  const SpeakingPage({super.key, this.examples});
+  final List<ExampleItem> examples;
+  const SpeakingPage({super.key, required this.examples});
 
   @override
   State<SpeakingPage> createState() => _SpeakingPageState();
@@ -23,7 +18,7 @@ class SpeakingPage extends StatefulWidget {
 class _SpeakingPageState extends State<SpeakingPage> {
   // Inactivity timer behavior
   static const int _kInitialInactivitySec = 30; // no input yet
-  static const int _kInactivityAfterInputSec = 5; // after any input
+  static const int _kInactivityAfterInputSec = 3; // after any input
   static const double _kPassThreshold = 0.5;
   final _tts = FlutterTts();
   final _stt = stt.SpeechToText();
@@ -43,7 +38,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
   List<bool> _maskFlags = const []; // per display token masked flag
   int _matchedCount = 0; // number of matched normalized tokens
   // Timeout / judgement
-  Timer? _inactivityTimer; // replaces previous timeout/countdown timers
+  late final _InactivityController _inactivity; // handles inactivity timeout
   bool _hadAnyInput = false; // whether any speech input was detected
   bool _timedOut = false;
   bool _successPulse = false;
@@ -53,13 +48,14 @@ class _SpeakingPageState extends State<SpeakingPage> {
   @override
   void initState() {
     super.initState();
-    _items = _parseExamples(widget.examples);
+    _items = widget.examples;
     _prepareCard();
     _initTts().whenComplete(() {
       // Try autoplay after TTS initialized
       WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoplayFirst());
       _maybeAutoplayFirst();
     });
+    _inactivity = _InactivityController(onTimeout: _onTimeout);
     _initStt();
     // Fallback: try once after first frame as well
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoplayFirst());
@@ -88,32 +84,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
     if (mounted) setState(() {});
   }
 
-  List<ExampleItem> _parseExamples(dynamic data) {
-    try {
-      if (data is List) {
-        return data
-            .map((e) => ExampleItem(
-                  sentence: (e['sentence'] ?? e.toString()).toString(),
-                  meaning: (e['meaning'] ?? '').toString(),
-                ))
-            .toList();
-      }
-      if (data is Map && data['examples'] is List) {
-        final list = data['examples'] as List;
-        return list
-            .map((e) => ExampleItem(
-                  sentence: (e['sentence'] ?? e.toString()).toString(),
-                  meaning: (e['meaning'] ?? '').toString(),
-                ))
-            .toList();
-      }
-      final s = data?.toString() ?? '';
-      if (s.isNotEmpty) {
-        return [ExampleItem(sentence: s, meaning: '')];
-      }
-    } catch (_) {}
-    return [ExampleItem(sentence: 'Hello world', meaning: '안녕')];
-  }
+  // Examples are now provided as a typed list via the constructor
 
   void _prepareCard() {
     final item = _items[_index];
@@ -258,7 +229,6 @@ class _SpeakingPageState extends State<SpeakingPage> {
         }
         _recomputeMatches(recTokens);
         if (_matchedCount >= _tokens.length && !_passHandled) {
-          _passHandled = true;
           _autoPass();
         }
       },
@@ -334,41 +304,38 @@ class _SpeakingPageState extends State<SpeakingPage> {
       await _stt.cancel();
       setState(() => _listening = false);
     }
-    _clearInactivityTimer();
-    _showPassAndNext(auto: true);
+    _finalizePass();
   }
 
   void _showPassAndNext({bool auto = false}) {
-    // Autoplay TTS only once per pass
-    if (_passTtsPlayed) return;
-    _passTtsPlayed = true;
-    // Use a slight delay to avoid contention with STT teardown
-    Future<void>.delayed(const Duration(milliseconds: 80), () {
-      if (!mounted) return;
-      // Rounds 2 and 3 only: speak after user reads
-      if (_round >= 1) {
-        _speak(force: true);
+    // Success effect: trigger immediately (only once)
+    if (!_passEffectPlayed) {
+      _passEffectPlayed = true;
+      _playSuccessEffect();
+    }
+    // Rounds 2 and 3 (round >= 1): play TTS immediately on pass
+    if (_round >= 1 && !_passTtsPlayed) {
+      _passTtsPlayed = true;
+      if (_listening) {
+        try {
+          _stt.cancel();
+        } catch (_) {}
+        setState(() => _listening = false);
       }
-      // Play success effect once per pass
-      if (!_passEffectPlayed) {
-        _passEffectPlayed = true;
-        _playSuccessEffect();
-      }
-    });
+      _speak(force: true);
+    }
   }
   void _startInactivityTimer(int seconds) {
-    _clearInactivityTimer();
     _timedOut = false;
-    _inactivityTimer = Timer(Duration(seconds: seconds), _onTimeout);
+    _inactivity.start(seconds);
   }
 
   void _restartInactivityTimer(int seconds) {
-    _startInactivityTimer(seconds);
+    _inactivity.bump(seconds);
   }
 
   void _clearInactivityTimer() {
-    _inactivityTimer?.cancel();
-    _inactivityTimer = null;
+    _inactivity.cancel();
   }
 
   void _onTimeout() {
@@ -393,6 +360,14 @@ class _SpeakingPageState extends State<SpeakingPage> {
     setState(() {
       _revealMasked = true; // reveal hidden tokens on timeout
     });
+  }
+
+  void _finalizePass() {
+    if (_passHandled) return;
+    _passHandled = true;
+    _timedOut = false;
+    _clearInactivityTimer();
+    _showPassAndNext(auto: true);
   }
 
   void _playSuccessEffect() {
@@ -621,5 +596,34 @@ class _WordChip extends StatelessWidget {
         style: TextStyle(color: hide ? Colors.transparent.withOpacity(0.0) : fg, fontSize: 18, height: 1.2),
       ),
     );
+  }
+}
+
+class _InactivityController {
+  final VoidCallback onTimeout;
+  Timer? _timer;
+  bool _fired = false;
+
+  _InactivityController({required this.onTimeout});
+
+  void start(int seconds) {
+    cancel();
+    _fired = false;
+    _timer = Timer(Duration(seconds: seconds), _fire);
+  }
+
+  void bump(int seconds) {
+    start(seconds);
+  }
+
+  void cancel() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  void _fire() {
+    if (_fired) return;
+    _fired = true;
+    onTimeout();
   }
 }

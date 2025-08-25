@@ -7,6 +7,8 @@ import 'chat_message.dart';
 import '../../services/openai_chat_service.dart';
 import '../../services/examples_api.dart';
 import '../speaking/speaking_page.dart';
+import '../../core/text_markers.dart';
+import 'package:englishplease/models/example_item.dart';
 
 class ChatPage extends StatefulWidget {
   final String initialQuery;
@@ -38,6 +40,8 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    // Ensure HTTP client is closed
+    _service.dispose();
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
@@ -56,8 +60,8 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _appendAssistant(String content) {
-    final paren = _extractParenPattern(content);
-    final curly = _extractPattern(content);
+    final paren = TextMarkers.extractParen(content);
+    final curly = TextMarkers.extractCurly(content);
     debugPrint('extract | paren="${paren ?? '-'}", curly="${curly ?? '-'}"');
     setState(() {
       if (paren != null && paren.isNotEmpty) {
@@ -115,78 +119,19 @@ class _ChatPageState extends State<ChatPage> {
     _sendToAI();
   }
 
-  /// '{{ ... }}' 안의 첫 패턴을 추출. 없으면 null
-  String? _extractPattern(String text) {
-    final re = RegExp(r"\{\{\s*(.*?)\s*\}\}");
-    final match = re.firstMatch(text);
-    if (match != null && match.groupCount >= 1) {
-      final s = match.group(1)!.trim();
-      return s.isEmpty ? null : s;
-    }
-    return null;
-  }
-
-  /// '(( ... ))' 안의 첫 패턴을 추출. 없으면 null
-  String? _extractParenPattern(String text) {
-    final re = RegExp(r"\(\(\s*(.*?)\s*\)\)", dotAll: true);
-    final match = re.firstMatch(text);
-    if (match != null && match.groupCount >= 1) {
-      final s = match.group(1)!.trim();
-      return s.isEmpty ? null : s;
-    }
-    return null;
-  }
-
-  /// 응답 내 '{{ ... }}' 마커를 내용만 남기고 제거
-  /// 응답 내 '{{ ... }}' 마커를 내용만 남기고 제거 (줄바꿈 보존)
-  String _stripPatternMarkers(String text) {
-    // {{ }} 패턴만 제거하고 줄바꿈은 그대로 유지
-    final re = RegExp(r'\{\{\s*[\s\S]*?\s*\}\}');
-    final stripped = text.replaceAll(re, '');
-
-    // 연속된 공백만 정리 (줄바꿈은 유지)
-    // 여러 개의 스페이스나 탭을 하나로 줄이되, 줄바꿈은 그대로 둠
-    return stripped
-        .replaceAll(RegExp(r'[ \t]{2,}'), ' ')  // 스페이스와 탭만 정리
-        .replaceAll(RegExp(r'\n[ \t]+'), '\n')  // 줄바꿈 후 공백 정리
-        .replaceAll(RegExp(r'[ \t]+\n'), '\n')  // 줄바꿈 전 공백 정리
-        .trim();
-  }
-
-  /// 응답 내 '(( ... ))' 마커를 내용만 남기고 제거 (줄바꿈 보존)
-  String _stripParenMarkers(String text) {
-    final re = RegExp(r'\(\(\s*[\s\S]*?\s*\)\)');
-    final stripped = text.replaceAll(re, '');
-    return stripped
-        .replaceAll(RegExp(r'[ \t]{2,}'), ' ')
-        .replaceAll(RegExp(r'\n[ \t]+'), '\n')
-        .replaceAll(RegExp(r'[ \t]+\n'), '\n')
-        .trim();
-  }
+  // marker strip is moved to core/TextMarkers
 
   void _debugLogPatterns([String where = '']) {
     final tag = where.isNotEmpty ? ' [$where]' : '';
     debugPrint('pattern$tag | paren="${_lastParenPattern ?? '-'}", curly="${_lastCurlyPattern ?? '-'}"');
   }
 
-  String _extractFirstEnglishSentence(String text) {
-    final cleaned = _stripParenMarkers(_stripPatternMarkers(text)).trim();
-    if (cleaned.isEmpty) return '';
-    final lines = cleaned.split(RegExp(r'\r?\n')).map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    for (final line in lines) {
-      if (!RegExp(r'[A-Za-z]').hasMatch(line)) continue;
-      final m = RegExp(r'([A-Za-z][^.!?]*[.!?])').firstMatch(line);
-      if (m != null) return m.group(1)!.trim();
-      return line; // fallback to the whole line
-    }
-    // last resort: first 120 chars
-    return cleaned.length <= 120 ? cleaned : cleaned.substring(0, 120);
-  }
+  // removed unused _extractFirstEnglishSentence helper
 
   // timestamp helper removed (no file saving)
 
   Future<void> _openExampleDialog(String assistantText) async {
-    final initialPattern = _lastCurlyPattern ?? _extractPattern(assistantText) ?? '';
+    final initialPattern = _lastCurlyPattern ?? TextMarkers.extractCurly(assistantText) ?? '';
     debugPrint('initialPattern(fromCurly)="$initialPattern", lastParen="${_lastParenPattern ?? '-'}", lastCurly="${_lastCurlyPattern ?? '-'}"');
     final res = await showModalBottomSheet<_ExampleGenResult>(
       context: context,
@@ -221,7 +166,7 @@ class _ChatPageState extends State<ChatPage> {
           return;
         }
 
-        final data = await _examplesApi.generate(
+        final List<ExampleItem> data = await _examplesApi.generate(
           prompt: prompt,
           pattern: pattern,
           sentence: sentence,
@@ -288,7 +233,7 @@ class _ChatPageState extends State<ChatPage> {
                       }
                       final m = _messages[index];
                       final isUser = m.role == ChatRole.user;
-                      final display = isUser ? m.content : _stripParenMarkers(_stripPatternMarkers(m.content));
+                      final display = isUser ? m.content : TextMarkers.stripParen(TextMarkers.stripCurly(m.content));
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
