@@ -6,7 +6,7 @@ import 'key_provider.dart';
 class OpenAIChatService {
   // 로컬 하드코딩 오버라이드: 여기에 키를 넣으면 이 값이 최우선으로 사용됩니다.
   // 예) static const String kLocalApiKey = 'sk-...';
-  static const String kLocalApiKey = '-';
+  static const String kLocalApiKey = '';
   // 키는 외부 파일/환경변수에서 로드합니다(웹: --dart-define)
   static const String _baseUrl = 'https://api.openai.com/v1/chat/completions';
   static const String _model = 'gpt-4o'; // 비용 절감 시 'gpt-4o-mini'
@@ -182,7 +182,18 @@ class OpenAIChatService {
 -   Grammar Explanations: Keep grammar descriptions concise and clear, focusing on the core concepts to avoid misunderstanding.
 -   The very last line of your output must be the English pattern enclosed in double curly braces, like `{{English Pattern}}`, and nothing else.( '9) 영어패턴' 이런거 출력하지마)
 -   At the end, print it out like this ((English sentence)). And don't create anything.( '10)영어문장' 이런거 출력하지마)
--   영어 표현을 생성할때 반드시 대안을 생성해. 그리고 마지막에 대안에 대해 설명해드릴까요? 이런식으로 역질문을 하도록해. 그리고 대안 문장에 대해서 설명할때에는 그냥 설명하지 말고 이 룰과 출력형식을 따라. 대신 대안문장은 생성하지 말고
+-   When generating English expressions, always provide alternatives. At the end, ask a follow-up question like, “Would you like me to explain the alternatives?” When explaining the alternative sentences, don’t just explain—follow these rules and the specified output format. However, do not actually generate the alternative sentences.
+-   When creating patterns, always put Korean inside square brackets [ ]. For example: [동명사] + is my favorite thing in the world.
+
+Pattern Creation Rules:
+-   Create the pattern in a reusable format while avoiding overgeneralization, and preserve idiomatic fixed expressions.
+-   Replace core content words (nouns, verbs, etc.) with Korean labels and always enclose them in square brackets [ ]. Example: [동명사] + is my favorite thing in the world.
+-   Keep function words—auxiliaries (can, will), tense markers (e.g., past forms of be), negation (not), and the passive (be + p.p.)—as-is whenever possible.
+-   Prefer specific labels (e.g., if the subject is a gerund, use [동명사] rather than [주어]).
+-   Leave fixed expressions as they are (e.g., It is ~ for [사람] to ~, one of the most ~, be going to, in the world) and replace only the variable slots with labels.
+
+When needed, use the following labels (only what you need):
+[주어] [목적어] [보어] [동사] [동명사] [동명사구] [to부정사] [현재분사] [과거분사] [명사구] [형용사] [형용사구] [부사] [부사구] [전치사구] [관계절] [that절] [부사절] [조건절] [양보절] [시간] [장소] [수량] [날짜] [고유명사] [수동태] [부정] [조동사]
 
 **Analysis Guidelines (Apply these internally):**
 -   Analyze the input Korean sentence for its core meaning (e.g., statement of fact, emotional intensity, preference, habit), conversational context (formality), and lexical tone (casual, neutral, formal).

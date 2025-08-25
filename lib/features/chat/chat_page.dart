@@ -9,6 +9,13 @@ import '../../services/examples_api.dart';
 import '../speaking/speaking_page.dart';
 import '../../core/text_markers.dart';
 import 'package:englishplease/models/example_item.dart';
+import 'package:englishplease/features/review/data/review_repository_prefs.dart';
+import 'package:englishplease/features/review/models/review_card.dart';
+import 'package:englishplease/features/review/utils/review_id.dart';
+import 'package:englishplease/config/app_config.dart';
+import 'package:englishplease/features/review/data/review_set_repository_prefs.dart';
+import 'package:englishplease/features/review/models/review_set.dart';
+import 'package:englishplease/features/review/scheduler/fsrs_scheduler.dart';
 
 class ChatPage extends StatefulWidget {
   final String initialQuery;
@@ -21,6 +28,8 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> {
   final _service = OpenAIChatService();
   final _examplesApi = ExamplesApi();
+  final _reviewRepo = ReviewRepositoryPrefs();
+  final _setRepo = ReviewSetRepositoryPrefs();
   int _seq = 0;
   final _inputCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
@@ -192,7 +201,10 @@ class _ChatPageState extends State<ChatPage> {
           if (!mounted) return;
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => SpeakingPage(examples: data),
+              builder: (_) => SpeakingPage(
+                examples: data,
+                onComplete: _handleSpeakingComplete,
+              ),
             ),
           );
         });
@@ -208,6 +220,74 @@ class _ChatPageState extends State<ChatPage> {
       }
     }
   }
+
+  Future<void> _handleSpeakingComplete(List<ExampleItem> examples) async {
+    try {
+      final now = DateTime.now();
+      final ts = now.millisecondsSinceEpoch;
+      final existing = await _reviewRepo.fetchAll();
+      final existingById = {for (final c in existing) c.id: c};
+
+      final List<ReviewCard> toUpsert = [];
+      final ids = <String>[];
+      for (final ex in examples) {
+        final id = makeReviewIdForSentence(ex.sentence);
+        ids.add(id);
+        final due = AppConfig.immediateReviewAfterComplete
+            ? ts
+            : FsrsScheduler.dueAtStartOfDayPlusDays(now, 1);
+        if (existingById.containsKey(id)) {
+          // 기존 카드: reps 변경 없이 setId만 추후 주입, 테스트 모드면 due만 now로 조정
+          final cur = existingById[id]!;
+          toUpsert.add(cur.copyWith(
+            updatedAt: ts,
+            due: AppConfig.immediateReviewAfterComplete ? ts : cur.due,
+          ));
+        } else {
+          toUpsert.add(ReviewCard(
+            id: id,
+            sentence: ex.sentence,
+            meaning: ex.meaning,
+            createdAt: ts,
+            updatedAt: ts,
+            due: due,
+            reps: 0, // 최초 생성은 0으로, 첫 복습 때 1이 되도록
+            lapses: 0,
+            stability: 2.5,
+            difficulty: 5.0,
+            lastRating: 0,
+          ));
+        }
+      }
+
+      if (toUpsert.isNotEmpty) {
+        await _reviewRepo.upsertAll(toUpsert);
+      }
+
+      // 세트 생성 및 카드 setId 주입
+      final allNow = await _reviewRepo.fetchAll();
+      final picked = allNow.where((c) => ids.contains(c.id)).toList();
+      final title = picked.isNotEmpty ? picked.first.sentence : '학습 세트';
+      final setId = await _setRepo.createSet(title: title, itemIds: ids, now: now);
+      // 카드에 setId 부여
+      final withSet = picked.map((c) => c.copyWith(setId: setId, updatedAt: ts)).toList();
+      if (withSet.isNotEmpty) {
+        await _reviewRepo.upsertAll(withSet);
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('복습 카드가 저장되었습니다.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('저장 실패: $e')),
+      );
+    }
+  }
+
+  // onItemReviewed는 reps 증가에 사용하지 않습니다(중간 진행률 용도로만 남겨둘 수 있음).
 
   @override
   Widget build(BuildContext context) {

@@ -9,7 +9,9 @@ import 'package:englishplease/models/example_item.dart';
 
 class SpeakingPage extends StatefulWidget {
   final List<ExampleItem> examples;
-  const SpeakingPage({super.key, required this.examples});
+  final ValueChanged<List<ExampleItem>>? onComplete;
+  final ValueChanged<ExampleItem>? onItemReviewed; // 카드별 진행 중간 반영 콜백
+  const SpeakingPage({super.key, required this.examples, this.onComplete, this.onItemReviewed});
 
   @override
   State<SpeakingPage> createState() => _SpeakingPageState();
@@ -26,6 +28,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
   bool _listening = false;
   bool _firstAutoplayDone = false;
   bool _completed = false;
+  bool _completeNotified = false; // notify onComplete once
   bool _passHandled = false; // ensure pass handled once per card
   bool _passTtsPlayed = false; // ensure pass TTS plays once per card
   bool _passEffectPlayed = false; // ensure pass effect plays once per card
@@ -360,6 +363,8 @@ class _SpeakingPageState extends State<SpeakingPage> {
     setState(() {
       _revealMasked = true; // reveal hidden tokens on timeout
     });
+    // After timeout, always read the sentence via TTS regardless of round
+    _speak(force: true);
   }
 
   void _finalizePass() {
@@ -389,6 +394,13 @@ class _SpeakingPageState extends State<SpeakingPage> {
   }
 
   void _next() {
+    // 현재 카드에 대해 콜백 통지 (Good 고정)
+    if (_index >= 0 && _index < _items.length) {
+      final cbItem = widget.onItemReviewed;
+      if (cbItem != null) {
+        try { cbItem(_items[_index]); } catch (_) {}
+      }
+    }
     // Ensure immediate stop before switching to next item
     if (_listening) {
       _stt.cancel();
@@ -418,6 +430,15 @@ class _SpeakingPageState extends State<SpeakingPage> {
         setState(() {
           _completed = true;
         });
+        if (!_completeNotified) {
+          _completeNotified = true;
+          final cb = widget.onComplete;
+          if (cb != null) {
+            try {
+              cb(_items);
+            } catch (_) {}
+          }
+        }
       }
     }
   }

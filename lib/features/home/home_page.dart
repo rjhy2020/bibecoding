@@ -8,6 +8,7 @@ import 'widgets/font_warm_up.dart';
 import 'widgets/metric_card.dart';
 import 'widgets/quick_action_card.dart';
 import 'widgets/recent_phrase_tile.dart';
+import '../review/ui/review_home_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -269,8 +270,8 @@ class _HomePageState extends State<HomePage> {
                           QuickActionCard(
                             icon: Icons.autorenew,
                             title: '복습하기',
-                            caption: '12개 대기중',
-                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LearnPage())),
+                            caption: '오늘 예정 카드 보기',
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReviewHomePage())),
                           ),
                         ],
                       ),
@@ -282,8 +283,8 @@ class _HomePageState extends State<HomePage> {
                           child: QuickActionCard(
                             icon: Icons.autorenew,
                             title: '복습하기',
-                            caption: '12개 대기중',
-                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LearnPage())),
+                            caption: '오늘 예정 카드 보기',
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReviewHomePage())),
                           ),
                         ),
                       ],
