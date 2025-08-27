@@ -18,6 +18,89 @@
 - 위 읽기 전용 코드 스캔을 시작해도 될까요? 승인 시 바로 착수하고, 스캔 결과를 바탕으로 세부 수정 계획을 아래에 업데이트하겠습니다.
 
 
+# [신규] 세로환경 대응/반응형 UI 개선 계획 (승인 대기)
+
+## 배경/문제 인식
+- 가로 화면에선 의도한 UI(행(Row) 배치, 홈의 ‘복습하기’ 카드 폭 등)가 정상 노출되나, 세로(특히 Android 폰)로 줄이면 Row가 깨져 세로 정렬로 바뀌거나 ‘복습하기’ 영역이 비정상 크기/배치로 보임.
+- 목표는 화면 비율/폭 변화에 따라 요소들이 자연스럽게 축소·재배치되어, 세로 환경에서도 가로 대비 UX가 유지되는 것.
+
+## 목표/완료 기준
+- 세로(폭 360–420dp)에서도 핵심 Row(검색바/전송, 입력바, 액션 버튼)가 한 줄에서 유지되거나, 최소한 의도된 2단 구성으로 ‘깨짐 없이’ 보임.
+- 홈의 ‘복습하기’ QuickAction 영역이 세로에선 가로 거의 꽉 차는 너비(여백 고려)로 렌더링.
+- 스크롤, 오버플로우 경고, 버튼 겹침 등 레이아웃 이슈 없는 상태.
+- flutter analyze 무경고, 기존 테스트 통과.
+
+## 변경 포인트(코드 레벨 계획)
+1) 공통 브레이크포인트/스케일링 정의
+   - `ui/constants.dart` 또는 전용 `layout.dart`에 XS(<360), SM(360–480), MD(>480) 등 브레이크포인트 상수/헬퍼 추가.
+   - 패딩/폰트/컨트롤 높이를 폭에 따라 소폭 축소해 한 줄 유지 가능성 최대화.
+
+2) HomePage(hero 검색 영역, KPI, QuickAction)
+   - 검색 입력+버튼 Row: `Expanded`/`Flexible` 조합으로 TextField가 가변 폭을 흡수, 버튼은 고정/최소폭으로 유지.
+   - isTiny 분기 축소: 너무 쉽게 컬럼으로 떨어지지 않도록 임계치 재조정 및 소형 패딩 적용.
+   - QuickActionCard: 고정 `width: 280` 제거 → 부모 폭 기반 가변(`constraints.maxWidth` 내 최소/최대 폭)으로, 세로에선 거의 전체폭.
+   
+   - [KPI 영역(학습 연속일/복습 대기/지금까지 연습한 문장) 세부 조정]
+     - 기존 `kpiTwoColumn` 이분법 제거 → `cols = (width<360?1 : width<640?2 : 3)` 식으로 동적 열 수 결정.
+     - `Wrap` 유지하되 각 카드의 `SizedBox(width: itemW)`에서 `itemW = (maxWidth - gap*(cols-1))/cols`로 계산하여 세로에서도 고르게 1~2열 배치.
+     - 아주 좁은 폭(≤360dp)에서는 1열(전체폭)로 폴백하여 텍스트 겹침/깨짐 방지.
+     - `MetricCard` 내부 폰트/패딩을 XS 화면에서 소폭 축소(타이틀 12→11, 값 20→18 등)하여 줄바꿈 최소화.
+
+3) QuickActionCard 위젯 자체 개선
+   - `double? width` 파라미터 추가 또는 내부에서 `LayoutBuilder`로 가용 폭에 맞춰 너비 결정.
+   - 텍스트 줄바꿈/오버플로우 방지, 아이콘/텍스트 간격 축소(소형 화면 전용).
+   - [홈 ‘복습하기’ 섹션 세부 조정] 세로/좁은 폭에선 가로 스크롤 대신 단일 카드가 가득 차도록 `width: double.infinity` 기반 배치로 전환.
+
+4) ChatPage 하단 입력바(_InputBar)
+   - Row 유지: TextField `Expanded`, 전송 버튼 최소폭/아이콘만 모드 지원.
+   - 좁은 폭에서 contentPadding/폰트 사이즈 축소.
+
+5) ReviewHomePage
+   - 하단 ‘복습 시작하기’ 버튼은 이미 `double.infinity`이나, 상단 리스트/필터 영역 패딩/간격을 폭에 따라 축소.
+   - 세트 타일 텍스트 넘침 방지(줄바꿈/ellipsis)와 내부 간격 축소.
+
+6) SpeakingPage 카드
+   - 이미 `min(520, screenW-40)`로 폭 제한. 세로에서 상하 패딩/버튼 간격을 소폭 축소해 안정적 한 화면 배치 유지.
+
+7) 회귀 방지/정리
+   - 중복 분기 제거, 레이아웃 분기 기준(폭) 통일.
+   - dart format / flutter analyze 정리.
+
+## 구현 단계
+1) 브레이크포인트/레이아웃 헬퍼 추가(상수/함수)
+2) HomePage 검색/QuickAction 반응형 조정
+3) QuickActionCard 가변 너비화
+4) ChatPage 입력바 축소 레이아웃
+5) ReviewHomePage 패딩/간격/타일 줄바꿈 정리
+6) SpeakingPage 소폭 간격 튜닝(필요 시)
+7) 수동 검증(폭 320/360/390/411/480/800, 세로/가로)
+8) 분석/테스트/포맷 통과 확인
+
+## 테스트 플랜
+- 웹 크롬 DevTools로 다양한 디바이스 폭 시뮬레이션(Pixel 5, Galaxy S20, iPhone 12/SE 등).
+- 핵심 확인: 
+  - 홈 검색 Row 한 줄 유지 여부
+  - ‘복습하기’ 카드가 세로에서 거의 전체폭 차지
+  - Chat 입력바 한 줄 유지 및 버튼 잘림 없음
+  - Review 리스트/버튼 레이아웃 정상
+- `flutter analyze`, `flutter test` 통과 확인.
+
+## 리스크/대응
+- 매우 좁은 폭(≤320dp)에서 한 줄 유지 불가 시 2단(입력 위/버튼 아래)로 ‘의도된’ 폴백 제공.
+- 텍스트 길이에 따른 오버플로우는 ellipsis/줄바꿈 규칙으로 제어.
+
+## 예상 변경 파일
+- `lib/ui/constants.dart`(또는 신규 `lib/ui/layout.dart`)
+- `lib/features/home/home_page.dart`
+- `lib/features/home/widgets/quick_action_card.dart`
+- `lib/features/chat/chat_page.dart`(입력바 섹션)
+- `lib/features/review/ui/review_home_page.dart`
+- `lib/features/speaking/speaking_page.dart`(간격만 필요 시)
+
+## 승인 요청
+- 위 계획대로 반응형 레이아웃 개선을 진행해도 될까요? 승인 주시면 최소 변경으로 패치 → 포맷/분석 → 시뮬레이션 검증까지 수행하겠습니다.
+
+
 # 조사 결과 및 수정 계획 (승인 대기)
 
 ## 핵심 원인 요약
@@ -84,3 +167,34 @@
 
 ## 승인 요청
 - 위 추가 수정도 진행할까요? 승인 시 최소 변경으로 반영하겠습니다.
+
+
+# [신규] KPI 텍스트 동적 스케일링 계획 (승인 대기)
+
+## 배경
+- 세로/좁은 화면에서 KPI 제목(예: "지금까지 연습한 문장")이 잘려 보임. 현재 compact+ellipsis만으로는 가독성에 한계.
+
+## 목표
+- 카드 가로폭(=화면 비율)에 따라 텍스트 크기가 자동으로 줄어들어 잘림이 없도록 개선. 세로에서도 KPI 3개 가로 배치는 유지.
+
+## 접근
+1) `MetricCard` 내부에 `LayoutBuilder`로 가용 너비(`constraints.maxWidth`)를 얻어 스케일 값을 계산(예: 0.72~1.0 범위)
+2) 제목/값 `Text`를 각각 `FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft)`로 감싸 최후 수단으로 자동 축소
+3) compact 모드와 병행(아주 좁은 폭에서 높이/패딩 축소 유지), ellipsis는 보조 수단
+
+## 변경 파일
+- `lib/features/home/widgets/metric_card.dart`
+
+## 구현 단계
+1) `MetricCard`에 `LayoutBuilder` 도입 → `scale = clamp(maxW / T, 0.72, 1.0)` 계산(T는 기준 너비 220~240에서 조정)
+2) 제목/값 텍스트 각각 `FittedBox(scaleDown)` 적용 + `softWrap: false, maxLines: 1`
+3) 소형 화면에서 아이콘-텍스트 간격 8 유지
+4) 시뮬레이션(폭 320/360/390/411/480) 후 T/하한값 보정
+5) 포맷/분석/테스트 통과 확인
+
+## 리스크/대응
+- 과도한 축소 방지: 우선 폰트 스케일로 축소하고, 부족분만 FittedBox로 보정
+- 카드 높이 유지(76/88)로 레이아웃 안정성 확보
+
+## 승인 요청
+- 위 방식으로 텍스트 동적 스케일링을 적용해도 될까요? 승인 시 구현에 착수하겠습니다.

@@ -51,9 +51,11 @@ class _HomePageState extends State<HomePage> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final isNarrow = constraints.maxWidth < 640;
-            final kpiTwoColumn = constraints.maxWidth < 520;
-            final isTiny = constraints.maxWidth < 380;
+            final maxW = constraints.maxWidth;
+            final isNarrow = maxW < 640;
+            final isTiny = maxW < 380;
+            // KPI 영역 컬럼 수를 폭에 따라 동적으로 결정
+            final int kpiCols = maxW < 360 ? 1 : (maxW < 640 ? 2 : 3);
 
             return SingleChildScrollView(
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -227,54 +229,54 @@ class _HomePageState extends State<HomePage> {
 
                   const SizedBox(height: kGap20),
 
-                  if (!kpiTwoColumn)
-                    Row(
-                      children: const [
-                        Expanded(child: MetricCard(icon: Icons.trending_up, title: '학습 연속일', value: '7일')),
-                        SizedBox(width: kGap12),
-                        Expanded(child: MetricCard(icon: Icons.sticky_note_2, title: '복습 대기', value: '12개')),
-                        SizedBox(width: kGap12),
-                        Expanded(child: MetricCard(icon: Icons.mic, title: '지금까지 연습한 문장', value: '24개')),
-                      ],
-                    )
-                  else
-                    Wrap(
-                      spacing: kGap12,
-                      runSpacing: kGap12,
+                  Builder(builder: (_) {
+                    // Always keep three cards in a single horizontal row.
+                    // Compute per-card width so that 3 cards + 2 gaps fit the container width.
+                    final gap = kGap12;
+                    final availableW = (maxW - (kGap16 * 2));
+                    final cardW = ((availableW - gap * 2) / 3).toDouble();
+                    final compact = cardW < 160;
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.start,
                       children: [
                         SizedBox(
-                          width: (constraints.maxWidth - kGap12) / 2,
-                          child: const MetricCard(icon: Icons.trending_up, title: '학습 연속일', value: '7일'),
+                          width: cardW,
+                          child: MetricCard(icon: Icons.trending_up, title: '학습 연속일', value: '7일', compact: compact),
                         ),
+                        SizedBox(width: gap),
                         SizedBox(
-                          width: (constraints.maxWidth - kGap12) / 2,
-                          child: const MetricCard(icon: Icons.sticky_note_2, title: '복습 대기', value: '12개'),
+                          width: cardW,
+                          child: MetricCard(icon: Icons.sticky_note_2, title: '복습 대기', value: '12개', compact: compact),
                         ),
+                        SizedBox(width: gap),
                         SizedBox(
-                          width: (constraints.maxWidth - kGap12) / 2,
-                          child: const MetricCard(icon: Icons.mic, title: '지금까지 연습한 문장', value: '24개'),
+                          width: cardW,
+                          child: MetricCard(icon: Icons.mic, title: '지금까지 연습한 문장', value: '24개', compact: compact),
                         ),
                       ],
-                    ),
+                    );
+                  }),
 
                   const SizedBox(height: kGap20),
 
                   Text('빠른 복습', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 20)),
                   const SizedBox(height: kGap12),
                   if (isNarrow)
-                    SizedBox(
-                      height: 130,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          QuickActionCard(
-                            icon: Icons.autorenew,
-                            title: '복습하기',
-                            caption: '오늘 예정 카드 보기',
-                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReviewHomePage())),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 120,
+                            child: QuickActionCard(
+                              icon: Icons.autorenew,
+                              title: '복습하기',
+                              caption: '오늘 예정 카드 보기',
+                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReviewHomePage())),
+                              width: double.infinity,
+                            ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     )
                   else
                     Row(
@@ -285,6 +287,7 @@ class _HomePageState extends State<HomePage> {
                             title: '복습하기',
                             caption: '오늘 예정 카드 보기',
                             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReviewHomePage())),
+                            width: null,
                           ),
                         ),
                       ],

@@ -6,12 +6,14 @@ class QuickActionCard extends StatelessWidget {
   final String title;
   final String caption;
   final VoidCallback onTap;
+  final double? width;
   const QuickActionCard({
     super.key,
     required this.icon,
     required this.title,
     required this.caption,
     required this.onTap,
+    this.width,
   });
 
   @override
@@ -20,8 +22,9 @@ class QuickActionCard extends StatelessWidget {
     final tt = Theme.of(context).textTheme;
     final bool light = Theme.of(context).brightness == Brightness.light;
 
+    final double cardWidth = width ?? 280;
     return SizedBox(
-      width: 280,
+      width: cardWidth,
       height: 120,
       child: Card(
         color: light ? Colors.white : cs.surface,
@@ -75,4 +78,3 @@ class QuickActionCard extends StatelessWidget {
     );
   }
 }
-
