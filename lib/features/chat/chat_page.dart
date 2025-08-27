@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:flutter/services.dart' show SpellCheckConfiguration, TextCapitalization, SmartDashesType, SmartQuotesType, rootBundle;
+import 'package:flutter/services.dart' show SpellCheckConfiguration, TextCapitalization, SmartDashesType, SmartQuotesType, rootBundle, TextInputFormatter, FilteringTextInputFormatter, LengthLimitingTextInputFormatter;
 import 'dart:convert' show jsonEncode;
 
 import 'chat_message.dart';
@@ -658,9 +658,16 @@ class _ExampleGenSheetState extends State<_ExampleGenSheet> {
                     child: TextField(
                       controller: _countCtrl,
                       keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(2),
+                        _MaxIntInputFormatter(50),
+                      ],
+                      maxLength: 2,
                       decoration: InputDecoration(
                         labelText: '예문 생성 수',
                         hintText: '기본값 10',
+                        counterText: '',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         isDense: true,
                       ),
@@ -693,6 +700,31 @@ class _ExampleGenSheetState extends State<_ExampleGenSheet> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _MaxIntInputFormatter extends TextInputFormatter {
+  final int max;
+  const _MaxIntInputFormatter(this.max);
+
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final text = newValue.text;
+    if (text.isEmpty) return newValue;
+    // digitsOnly already applied, but keep safe-guard
+    final digits = text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) {
+      return const TextEditingValue(text: '');
+    }
+    final n = int.tryParse(digits);
+    if (n == null) return oldValue;
+    final capped = n > max ? max : n;
+    final s = capped.toString();
+    return TextEditingValue(
+      text: s,
+      selection: TextSelection.collapsed(offset: s.length),
+      composing: TextRange.empty,
     );
   }
 }

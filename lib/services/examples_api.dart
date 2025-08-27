@@ -20,12 +20,14 @@ class ExamplesApi {
     required int count,
     String? apiKeyOverride,
   }) async {
+    // Guard: Clamp count to 1..50 at the service layer
+    final int safeCount = count < 1 ? 1 : (count > 50 ? 50 : count);
     final apiKey = apiKeyOverride ?? await OpenAIChatService.resolveApiKey();
     if (apiKey.isEmpty) {
       throw StateError('OPENAI_API_KEY is not set');
     }
 
-    final userInput = '{{${pattern}}}\n원래문장: ${sentence}\n${count}';
+    final userInput = '{{${pattern}}}\n원래문장: ${sentence}\n${safeCount}';
     final body = <String, dynamic>{
       'model': _model,
       'temperature': 0.2,

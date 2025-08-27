@@ -33,22 +33,58 @@ class MetricCard extends StatelessWidget {
         ],
         border: Border.all(color: cs.outlineVariant.withOpacity(0.25)),
       ),
-      child: Row(
-        children: [
-          Icon(icon, color: cs.primary),
-          SizedBox(width: compact ? kGap8 : kGap12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(title, style: tt.bodySmall?.copyWith(fontSize: titleSize, color: cs.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: kGap4),
-                Text(value, style: tt.titleLarge?.copyWith(fontSize: valueSize, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-              ],
-            ),
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxW = constraints.maxWidth;
+          const baseW = 240.0; // 기준 카드 너비
+          final scale = (maxW / baseW).clamp(0.90, 1.0);
+          final tSize = titleSize * scale;
+          final vSize = valueSize * scale;
+
+          return Row(
+            children: [
+              Icon(icon, color: cs.primary),
+              SizedBox(width: compact ? kGap8 : kGap12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          title,
+                          style: tt.bodySmall?.copyWith(fontSize: tSize, color: cs.onSurfaceVariant),
+                          softWrap: false,
+                          maxLines: 1,
+                          overflow: TextOverflow.visible,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: kGap4),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          value,
+                          style: tt.titleLarge?.copyWith(fontSize: vSize, fontWeight: FontWeight.w600),
+                          softWrap: false,
+                          maxLines: 1,
+                          overflow: TextOverflow.visible,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
