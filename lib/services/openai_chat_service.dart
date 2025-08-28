@@ -6,7 +6,7 @@ import 'key_provider.dart';
 class OpenAIChatService {
   // 로컬 하드코딩 오버라이드: 여기에 키를 넣으면 이 값이 최우선으로 사용됩니다.
   // 예) static const String kLocalApiKey = 'sk-...';
-  static const String kLocalApiKey = '';
+  static const String kLocalApiKey = '-';
   // 키는 외부 파일/환경변수에서 로드합니다(웹: --dart-define)
   static const String _baseUrl = 'https://api.openai.com/v1/chat/completions';
   static const String _model = 'gpt-4o'; // 비용 절감 시 'gpt-4o-mini'

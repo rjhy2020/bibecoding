@@ -82,11 +82,25 @@ class _ReviewHomePageState extends State<ReviewHomePage> {
   Future<void> _startReview() async {
     if (_visibleSets.isEmpty || _starting) return;
     setState(() => _starting = true);
+    // Ensure storage keys exist
+    try {
+      await _setRepo.ensureInitialized();
+      await _cardRepo.ensureInitialized();
+    } catch (_) {}
     final set = _visibleSets.first; // 현재 필터에서 가장 먼저 due된 세트 하나만 실행
     _currentSetId = set.id;
     // 세트의 카드 로드
     final allCards = await _cardRepo.fetchAll();
     final cards = allCards.where((c) => set.itemIds.contains(c.id)).toList();
+    if (cards.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('세트에 카드가 없어요. 예문을 먼저 추가해 주세요.')),
+        );
+      }
+      setState(() => _starting = false);
+      return;
+    }
     final examples = cards.map((c) => ExampleItem(sentence: c.sentence, meaning: c.meaning)).toList(growable: false);
     try {
     await Navigator.of(context).push(

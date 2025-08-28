@@ -189,16 +189,34 @@ class _ChatPageState extends State<ChatPage> {
           debugPrint('[Examples] resp (non-encodable) type=${data.runtimeType}');
         }
 
+        // Auto-add to Review with default rating(2=Good) before navigating
+        try {
+          await _autoAddExamplesToReview(data);
+        } catch (e) {
+          debugPrint('[Examples] auto-add failed: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('복습 자동 추가 실패: $e')),
+            );
+          }
+        }
+
         if (!mounted) return;
         // Turn off loading before navigation
         setState(() => _examplesLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('예문 생성 완료')), // optional feedback
+          const SnackBar(content: Text('예문 생성 완료 · 복습에 자동 추가(보통)')),
         );
-        // Navigate to SpeakingPage
+        // Navigate to SpeakingPage (only if we have examples)
         // Delay to ensure overlay teardown
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
+          if (data.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('예문이 없습니다. 다시 시도해 주세요.')),
+            );
+            return;
+          }
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => SpeakingPage(
@@ -220,6 +238,72 @@ class _ChatPageState extends State<ChatPage> {
         if (mounted && _examplesLoading) setState(() => _examplesLoading = false);
       }
     }
+  }
+
+  Future<void> _autoAddExamplesToReview(List<ExampleItem> examples) async {
+    if (examples.isEmpty) return;
+    final now = DateTime.now();
+    final ts = now.millisecondsSinceEpoch;
+    debugPrint('[AutoAdd] start | items=${examples.length}');
+
+    // Ensure storage keys are initialized so first write succeeds
+    try {
+      await _reviewRepo.ensureInitialized();
+    } catch (_) {}
+    try {
+      await _setRepo.ensureInitialized();
+    } catch (_) {}
+
+    // Fetch existing cards once for merging
+    final existing = await _reviewRepo.fetchAll();
+    final existingById = {for (final c in existing) c.id: c};
+
+    final List<ReviewCard> toUpsert = [];
+    final ids = <String>[];
+    for (final ex in examples) {
+      final id = makeReviewIdForSentence(ex.sentence);
+      ids.add(id);
+      if (existingById.containsKey(id)) {
+        final cur = existingById[id]!;
+        // Keep existing scheduling; just bump updatedAt
+        toUpsert.add(cur.copyWith(updatedAt: ts));
+      } else {
+        toUpsert.add(ReviewCard(
+          id: id,
+          sentence: ex.sentence,
+          meaning: ex.meaning,
+          createdAt: ts,
+          updatedAt: ts,
+          due: ts, // available immediately
+          reps: 0,
+          lapses: 0,
+          stability: 2.5,
+          difficulty: 5.0,
+          lastRating: 2, // default Good
+        ));
+      }
+    }
+
+    if (toUpsert.isNotEmpty) {
+      debugPrint('[AutoAdd] upsert cards: ${toUpsert.length}');
+      await _reviewRepo.upsertAll(toUpsert);
+    }
+
+    // Create/update a review set for these items and assign setId on cards
+    final title = examples.first.sentence;
+    final setId = await _setRepo.createSet(title: title, itemIds: ids, now: now);
+    debugPrint('[AutoAdd] set created/updated: $setId');
+
+    // Fetch again and update setId on the picked cards
+    final allNow = await _reviewRepo.fetchAll();
+    final picked = allNow.where((c) => ids.contains(c.id)).toList();
+    final withSet = picked.map((c) => c.copyWith(setId: setId, updatedAt: ts)).toList();
+    if (withSet.isNotEmpty) {
+      debugPrint('[AutoAdd] upsert cards with setId: ${withSet.length}');
+      await _reviewRepo.upsertAll(withSet);
+    }
+
+    debugPrint('[AutoAdd] done');
   }
 
   Future<void> _handleSpeakingCompleteRated(List<ExampleItem> examples, int rating) async {

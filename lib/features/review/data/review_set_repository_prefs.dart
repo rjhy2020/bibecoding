@@ -13,6 +13,15 @@ class ReviewSetRepositoryPrefs implements ReviewSetRepository {
 
   Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
+  /// Ensure the storage key exists by initializing to an empty list if absent.
+  Future<void> ensureInitialized() async {
+    final p = await _prefs();
+    final cur = p.getString(_kKey);
+    if (cur == null) {
+      await p.setString(_kKey, '[]');
+    }
+  }
+
   @override
   Future<String> createSet({required String title, required List<String> itemIds, DateTime? now}) async {
     final p = await _prefs();
@@ -101,7 +110,11 @@ class ReviewSetRepositoryPrefs implements ReviewSetRepository {
 
   Future<List<ReviewSet>> _loadAll(SharedPreferences p) async {
     final s = p.getString(_kKey);
-    if (s == null || s.isEmpty) return <ReviewSet>[];
+    if (s == null || s.isEmpty) {
+      // Initialize to empty list to ensure key exists
+      await p.setString(_kKey, '[]');
+      return <ReviewSet>[];
+    }
     try {
       final arr = jsonDecode(s);
       if (arr is List) {
