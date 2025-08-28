@@ -30,7 +30,7 @@ class SpeakingPage extends StatefulWidget {
 class _SpeakingPageState extends State<SpeakingPage> {
   // Inactivity timer behavior
   static const int _kInitialInactivitySec = 30; // no input yet
-  static const int _kInactivityAfterInputSec = 3; // after any input
+  static const int _kInactivityAfterInputSec = 5; // after any input
   static const double _kPassThreshold = 0.5;
   final _tts = FlutterTts();
   final _stt = stt.SpeechToText();
@@ -42,6 +42,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
   bool _passHandled = false; // ensure pass handled once per card
   bool _passTtsPlayed = false; // ensure pass TTS plays once per card
   bool _passEffectPlayed = false; // ensure pass effect plays once per card
+  bool _autoListenAfterTtsPending = false; // auto-start STT after TTS in round 1
   int _round = 0; // 0,1,2 for 3 rounds
   int _index = 0;
   late List<ExampleItem> _items;
@@ -87,6 +88,9 @@ class _SpeakingPageState extends State<SpeakingPage> {
     await _tts.setLanguage('en-US');
     await _tts.setSpeechRate(0.5);
     await _tts.setPitch(1.0);
+    try {
+      await _tts.awaitSpeakCompletion(true);
+    } catch (_) {}
   }
 
   Future<void> _initStt() async {
@@ -140,6 +144,17 @@ class _SpeakingPageState extends State<SpeakingPage> {
     await _tts.stop();
     final text = _items[_index].sentence;
     await _tts.speak(text);
+    // If pending, auto-start listening after TTS completes (round 1 only)
+    if (_autoListenAfterTtsPending && !_listening && !_passHandled && !_timedOut && _sttAvailable) {
+      _autoListenAfterTtsPending = false;
+      Future<void>.microtask(() {
+        if (mounted && !_listening && !_passHandled && !_timedOut && _sttAvailable) {
+          _toggleListen();
+        }
+      });
+    } else {
+      _autoListenAfterTtsPending = false;
+    }
   }
 
   List<bool> _computeMaskFlags(List<String> displayTokens, int round) {
@@ -206,6 +221,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
     Future<void>.delayed(const Duration(milliseconds: 80), () {
       if (!mounted) return;
       if (_round == 0) {
+        _autoListenAfterTtsPending = true;
         _speak();
       }
     });
@@ -217,9 +233,12 @@ class _SpeakingPageState extends State<SpeakingPage> {
       await _stt.cancel();
       setState(() => _listening = false);
       _clearInactivityTimer();
-      _checkPass();
+      // Evaluate like timeout: score by current match ratio and show effect
+      _evaluateManualStop();
       return;
     }
+    // Manual start overrides any pending auto-start after TTS
+    _autoListenAfterTtsPending = false;
     await _tts.stop();
     setState(() => _listening = true);
     _startInactivityTimer(_kInitialInactivitySec);
@@ -247,6 +266,8 @@ class _SpeakingPageState extends State<SpeakingPage> {
       },
       listenMode: stt.ListenMode.dictation,
       partialResults: true,
+      // Increase silence tolerance to 30s so recognition doesn't stop too quickly
+      pauseFor: const Duration(seconds: 30),
       localeId: 'en_US',
     );
   }
@@ -281,6 +302,47 @@ class _SpeakingPageState extends State<SpeakingPage> {
         _matchedCount = matched;
       });
     }
+  }
+
+  void _forcePass() {
+    // Mark all content tokens as matched and finalize pass
+    final nextFlags = List<bool>.from(
+      _matchedFlags.length == _displayTokens.length
+          ? _matchedFlags
+          : List<bool>.filled(_displayTokens.length, false),
+    );
+    for (int i = 0; i < _displayTokens.length; i++) {
+      final norm = _displayTokens[i].toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (norm.isNotEmpty) nextFlags[i] = true;
+    }
+    setState(() {
+      _matchedFlags = nextFlags;
+      _matchedCount = _tokens.length;
+    });
+    _autoPass();
+  }
+
+  void _evaluateManualStop() {
+    // Mimic timeout behavior: evaluate current progress and show success/fail effect,
+    // reveal masked tokens, enable Next by setting _timedOut.
+    _autoListenAfterTtsPending = false;
+    _timedOut = true;
+    _clearInactivityTimer();
+    if (_listening) {
+      try { _stt.cancel(); } catch (_) {}
+      _listening = false;
+    }
+    final total = _tokens.isEmpty ? 1 : _tokens.length;
+    final ratio = _matchedCount / total;
+    if (ratio >= _kPassThreshold) {
+      _playSuccessEffect();
+    } else {
+      _playFailEffect();
+    }
+    setState(() {
+      _revealMasked = true;
+    });
+    _speak(force: true);
   }
 
   bool _tokensMatch(String target, String rec) {
@@ -335,6 +397,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
         } catch (_) {}
         setState(() => _listening = false);
       }
+      _autoListenAfterTtsPending = false;
       _speak(force: true);
     }
   }
@@ -357,6 +420,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
     if (_passHandled || !_listening) {
       return;
     }
+    _autoListenAfterTtsPending = false;
     _timedOut = true;
     _clearInactivityTimer();
     if (_listening) {
@@ -423,7 +487,13 @@ class _SpeakingPageState extends State<SpeakingPage> {
       });
       _prepareCard();
       if (_round == 0) {
+        _autoListenAfterTtsPending = true;
         _speak();
+      } else {
+        _autoListenAfterTtsPending = false;
+        Future<void>.microtask(() {
+          if (mounted && !_listening && _sttAvailable) _toggleListen();
+        });
       }
     } else {
       if (_round + 1 < 3) {
@@ -433,7 +503,13 @@ class _SpeakingPageState extends State<SpeakingPage> {
         });
         _prepareCard();
         if (_round == 0) {
+          _autoListenAfterTtsPending = true;
           _speak();
+        } else {
+          _autoListenAfterTtsPending = false;
+          Future<void>.microtask(() {
+            if (mounted && !_listening && _sttAvailable) _toggleListen();
+          });
         }
       } else {
         // Show completion inside the card; do not auto-pop
