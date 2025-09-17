@@ -38,6 +38,7 @@ class _ChatPageState extends State<ChatPage> {
   bool _examplesLoading = false;
   String? _streamingMessageId;
   bool _streamingInProgress = false;
+  final Map<String, _AssistantMeta> _assistantMeta = {};
   String? _lastCurlyPattern; // last extracted from {{...}}
   String? _lastParenPattern; // last extracted from ((...))
 
@@ -74,20 +75,16 @@ class _ChatPageState extends State<ChatPage> {
     final paren = TextMarkers.extractParen(content);
     final curly = TextMarkers.extractCurly(content);
     debugPrint('extract | paren="${paren ?? '-'}", curly="${curly ?? '-'}"');
+    final id = _makeId();
     setState(() {
-      if (paren != null && paren.isNotEmpty) {
-        _lastParenPattern = paren;
-      }
-      if (curly != null && curly.isNotEmpty) {
-        _lastCurlyPattern = curly;
-      }
       _messages.add(ChatMessage(
-        id: _makeId(),
+        id: id,
         role: ChatRole.assistant,
         content: content,
         ts: DateTime.now(),
       ));
     });
+    _updateAssistantMeta(id, pattern: curly, sentence: paren);
     _debugLogPatterns('appendAssistant');
     _scrollToBottomDeferred();
   }
@@ -109,13 +106,8 @@ class _ChatPageState extends State<ChatPage> {
       } else {
         _messages.add(updated);
       }
-      if (paren != null && paren.isNotEmpty) {
-        _lastParenPattern = paren;
-      }
-      if (curly != null && curly.isNotEmpty) {
-        _lastCurlyPattern = curly;
-      }
     });
+    _updateAssistantMeta(id, pattern: curly, sentence: paren);
     if (finalize) {
       _debugLogPatterns('stream-final');
     }
@@ -124,6 +116,25 @@ class _ChatPageState extends State<ChatPage> {
 
   bool _isMessageStreaming(ChatMessage message) {
     return _streamingInProgress && message.id == _streamingMessageId;
+  }
+
+  void _updateAssistantMeta(String messageId, {String? pattern, String? sentence}) {
+    final prev = _assistantMeta[messageId];
+    final trimmedPattern = pattern?.trim();
+    final trimmedSentence = sentence?.trim();
+    final nextPattern = (trimmedPattern != null && trimmedPattern.isNotEmpty)
+        ? trimmedPattern
+        : prev?.pattern;
+    final nextSentence = (trimmedSentence != null && trimmedSentence.isNotEmpty)
+        ? trimmedSentence
+        : prev?.sentence;
+    _assistantMeta[messageId] = _AssistantMeta(pattern: nextPattern, sentence: nextSentence);
+    if (nextPattern != null && nextPattern.isNotEmpty) {
+      _lastCurlyPattern = nextPattern;
+    }
+    if (nextSentence != null && nextSentence.isNotEmpty) {
+      _lastParenPattern = nextSentence;
+    }
   }
 
   String _makeId() => '${DateTime.now().microsecondsSinceEpoch}-${_seq++}';
@@ -166,6 +177,7 @@ class _ChatPageState extends State<ChatPage> {
               }
             });
           }
+          _assistantMeta.remove(streamId);
         } else {
           _updateStreamingAssistant(streamId, text, finalize: true);
         }
@@ -185,6 +197,7 @@ class _ChatPageState extends State<ChatPage> {
             }
           });
         }
+        _assistantMeta.remove(streamId);
         _streamingInProgress = false;
       }
     } finally {
@@ -215,9 +228,19 @@ class _ChatPageState extends State<ChatPage> {
 
   // timestamp helper removed (no file saving)
 
-  Future<void> _openExampleDialog(String assistantText) async {
-    final initialPattern = _lastCurlyPattern ?? TextMarkers.extractCurly(assistantText) ?? '';
-    debugPrint('initialPattern(fromCurly)="$initialPattern", lastParen="${_lastParenPattern ?? '-'}", lastCurly="${_lastCurlyPattern ?? '-'}"');
+  Future<void> _openExampleDialog({required String messageId, required String assistantText}) async {
+    final meta = _assistantMeta[messageId];
+    final extractedPattern = TextMarkers.extractCurly(assistantText);
+    final extractedSentence = TextMarkers.extractParen(assistantText);
+    final fallbackPattern = (_lastCurlyPattern ?? extractedPattern ?? '').trim();
+    final fallbackSentence = (_lastParenPattern ?? extractedSentence ?? '').trim();
+    final initialPattern = (meta?.pattern?.trim().isNotEmpty == true)
+        ? meta!.pattern!.trim()
+        : fallbackPattern;
+    final initialSentence = (meta?.sentence?.trim().isNotEmpty == true)
+        ? meta!.sentence!.trim()
+        : fallbackSentence;
+    debugPrint('[ExampleSheet] init | msg=$messageId pattern="$initialPattern", sentence="$initialSentence"');
     final res = await showModalBottomSheet<_ExampleGenResult>(
       context: context,
       isScrollControlled: true,
@@ -229,12 +252,12 @@ class _ChatPageState extends State<ChatPage> {
       setState(() => _examplesLoading = true);
       try {
         final prompt = await rootBundle.loadString('assets/prompts/examples_prompt.txt');
-        // Use user-edited pattern first; fall back to lastCurly
+        // Use user-edited pattern first; fall back to stored/extracted values
         String pattern = (res.pattern).trim();
         if (pattern.isEmpty) {
-          pattern = (_lastCurlyPattern ?? '').trim();
+          pattern = (meta?.pattern ?? extractedPattern ?? _lastCurlyPattern ?? '').trim();
         }
-        final sentence = (_lastParenPattern ?? '').trim();
+        final sentence = (meta?.sentence ?? extractedSentence ?? _lastParenPattern ?? '').trim();
         final count = res.count;
         debugPrint('[Examples] req | pattern(used)="$pattern", sentence(paren)="$sentence", count=$count');
 
@@ -250,6 +273,9 @@ class _ChatPageState extends State<ChatPage> {
           );
           return;
         }
+
+        // Persist the resolved pattern/sentence for this message
+        _updateAssistantMeta(messageId, pattern: pattern, sentence: sentence);
 
         final List<ExampleItem> data = await _examplesApi.generate(
           prompt: prompt,
@@ -506,9 +532,9 @@ class _ChatPageState extends State<ChatPage> {
                           child: _ExampleCtaBox(
                             onTap: () {
                               if (_examplesLoading) return;
-                                  _openExampleDialog(m.content);
-                                },
-                              ),
+                              _openExampleDialog(messageId: m.id, assistantText: m.content);
+                            },
+                          ),
                             ),
                         ],
                       );
@@ -887,4 +913,10 @@ class _MaxIntInputFormatter extends TextInputFormatter {
       composing: TextRange.empty,
     );
   }
+}
+
+class _AssistantMeta {
+  final String? pattern;
+  final String? sentence;
+  const _AssistantMeta({this.pattern, this.sentence});
 }
