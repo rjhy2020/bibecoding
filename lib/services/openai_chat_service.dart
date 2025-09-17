@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import '../features/chat/chat_message.dart';
 import 'key_provider.dart';
@@ -322,4 +323,93 @@ in the world: 세상에서. 감정을 강조하는 표현으로 자주 씁니다
     if (filtered.length <= maxTurns) return filtered;
     return filtered.sublist(filtered.length - maxTurns);
   }
+
+  /// Streams assistant content tokens as they arrive.
+  Stream<String> askWithHistoryStream(
+    List<ChatMessage> history, {
+    int? maxTurns,
+    Duration? requestTimeout,
+  }) async* {
+    final key = kLocalApiKey.isNotEmpty ? kLocalApiKey : await KeyProvider.loadOpenAIKey();
+    if (key.isEmpty) {
+      throw StateError('OPENAI_API_KEY가 설정되지 않았습니다.');
+    }
+
+    int limit = maxTurns ?? _defaultMaxTurns;
+
+    Map<String, dynamic> buildBody(int turns) {
+      final msgs = <Map<String, dynamic>>[];
+      msgs.add(_systemMessage());
+      for (final m in _trimHistory(history, turns)) {
+        if (m.role == ChatRole.user || m.role == ChatRole.assistant) {
+          msgs.add({
+            'role': m.role == ChatRole.user ? 'user' : 'assistant',
+            'content': m.content,
+          });
+        }
+      }
+      return {
+        'model': _model,
+        'temperature': 0.7,
+        'max_tokens': 2000,
+        'stream': true,
+        'messages': msgs,
+      };
+    }
+
+    Future<http.StreamedResponse> postOnce(int turns) {
+      final req = http.Request('POST', Uri.parse(_baseUrl))
+        ..headers.addAll({
+          'Authorization': 'Bearer $key',
+          'Content-Type': 'application/json',
+        })
+        ..body = jsonEncode(buildBody(turns));
+      return _client.send(req).timeout(requestTimeout ?? const Duration(seconds: 60));
+    }
+
+    http.StreamedResponse resp;
+    try {
+      resp = await postOnce(limit);
+    } on TimeoutException catch (e) {
+      throw StateError('요청 시간 초과: $e');
+    }
+
+    if (resp.statusCode == 413 || resp.statusCode == 422) {
+      limit = (limit / 2).ceil().clamp(2, _defaultMaxTurns);
+      resp = await postOnce(limit);
+    }
+
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      final body = await resp.stream.bytesToString();
+      throw StateError('HTTP ${resp.statusCode}: $body');
+    }
+
+    await for (final line in resp.stream.transform(utf8.decoder).transform(const LineSplitter())) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty || trimmed == 'data: [DONE]') {
+        continue;
+      }
+      if (!trimmed.startsWith('data: ')) {
+        continue;
+      }
+      final payload = trimmed.substring(6);
+      Map<String, dynamic> parsed;
+      try {
+        parsed = jsonDecode(payload) as Map<String, dynamic>;
+      } catch (_) {
+        continue;
+      }
+      final choices = parsed['choices'];
+      if (choices is List && choices.isNotEmpty) {
+        final delta = choices.first['delta'];
+        if (delta is Map<String, dynamic>) {
+          final chunk = delta['content'];
+          if (chunk is String && chunk.isNotEmpty) {
+            yield chunk;
+          }
+        }
+      }
+    }
+  }
+
 }

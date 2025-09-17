@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:englishplease/models/example_item.dart';
 import 'package:englishplease/features/review/scheduler/fsrs_scheduler.dart';
 
@@ -43,6 +44,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
   bool _passTtsPlayed = false; // ensure pass TTS plays once per card
   bool _passEffectPlayed = false; // ensure pass effect plays once per card
   bool _autoListenAfterTtsPending = false; // auto-start STT after TTS in round 1
+  bool _restartPending = false; // guard to avoid scheduling multiple restarts
   int _round = 0; // 0,1,2 for 3 rounds
   int _index = 0;
   late List<ExampleItem> _items;
@@ -95,8 +97,8 @@ class _SpeakingPageState extends State<SpeakingPage> {
 
   Future<void> _initStt() async {
     _sttAvailable = await _stt.initialize(
-      onStatus: (s) => debugPrint('[STT] status: $s'),
-      onError: (e) => debugPrint('[STT] error: $e'),
+      onStatus: _handleSttStatus,
+      onError: _handleSttError,
     );
     if (mounted) setState(() {});
   }
@@ -242,7 +244,7 @@ class _SpeakingPageState extends State<SpeakingPage> {
     await _tts.stop();
     setState(() => _listening = true);
     _startInactivityTimer(_kInitialInactivitySec);
-    await _stt.listen(
+    final started = await _stt.listen(
       onResult: (result) {
         // Guard: ignore any late results after pass/timeout or when not listening
         if (!_listening || _passHandled || _timedOut) {
@@ -266,10 +268,89 @@ class _SpeakingPageState extends State<SpeakingPage> {
       },
       listenMode: stt.ListenMode.dictation,
       partialResults: true,
-      // Increase silence tolerance to 30s so recognition doesn't stop too quickly
+      // Increase silence tolerance and session length so mobile devices don't stop prematurely
       pauseFor: const Duration(seconds: 30),
+      listenFor: const Duration(minutes: 5),
       localeId: 'en_US',
     );
+    if (!started) {
+      setState(() => _listening = false);
+      _clearInactivityTimer();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('음성 인식을 시작하지 못했어요. 다시 시도해 주세요.')),
+        );
+      }
+    }
+  }
+
+  void _handleSttStatus(String status) {
+    debugPrint('[STT] status: $status');
+    if (!mounted) return;
+    final normalized = status.toLowerCase();
+    if (normalized == 'listening') {
+      if (!_listening) {
+        setState(() => _listening = true);
+      }
+      return;
+    }
+
+    if (normalized == 'notlistening' || normalized == 'done') {
+      final wasListening = _listening;
+      if (wasListening) {
+        setState(() => _listening = false);
+      }
+      _clearInactivityTimer();
+      if (_passHandled || _timedOut || _completed) {
+        return;
+      }
+      if (!wasListening) {
+        return;
+      }
+
+      if (_matchedCount >= _tokens.length) {
+        _finalizePass();
+        return;
+      }
+
+      _scheduleAutoRestartListening();
+    }
+  }
+
+  void _handleSttError(SpeechRecognitionError error) {
+    debugPrint('[STT] error: ${error.errorMsg} (permanent=${error.permanent})');
+    if (!mounted) return;
+    final wasListening = _listening;
+    if (wasListening) {
+      setState(() => _listening = false);
+    }
+    _clearInactivityTimer();
+    if (_passHandled || _timedOut || _completed) {
+      return;
+    }
+    if (!error.permanent) {
+      _scheduleAutoRestartListening();
+      return;
+    }
+    final msg = (error.errorMsg ?? '').trim();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg.isEmpty ? '음성 인식 오류가 발생했습니다.' : msg)),
+    );
+  }
+
+  void _scheduleAutoRestartListening() {
+    if (_restartPending) return;
+    if (!_sttAvailable) return;
+    _restartPending = true;
+    Future<void>.delayed(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      _restartPending = false;
+      if (_listening || _passHandled || _timedOut || _completed) {
+        return;
+      }
+      if (!_sttAvailable) return;
+      unawaited(_toggleListen());
+    });
   }
 
   void _recomputeMatches(List<String> recNormTokens) {

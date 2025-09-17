@@ -36,6 +36,8 @@ class _ChatPageState extends State<ChatPage> {
   final List<ChatMessage> _messages = [];
   bool _loading = false;
   bool _examplesLoading = false;
+  String? _streamingMessageId;
+  bool _streamingInProgress = false;
   String? _lastCurlyPattern; // last extracted from {{...}}
   String? _lastParenPattern; // last extracted from ((...))
 
@@ -90,6 +92,40 @@ class _ChatPageState extends State<ChatPage> {
     _scrollToBottomDeferred();
   }
 
+  void _updateStreamingAssistant(String id, String content, {bool finalize = false}) {
+    if (!mounted) return;
+    final paren = TextMarkers.extractParen(content);
+    final curly = TextMarkers.extractCurly(content);
+    setState(() {
+      final idx = _messages.indexWhere((m) => m.id == id);
+      final updated = ChatMessage(
+        id: id,
+        role: ChatRole.assistant,
+        content: content,
+        ts: DateTime.now(),
+      );
+      if (idx >= 0) {
+        _messages[idx] = updated;
+      } else {
+        _messages.add(updated);
+      }
+      if (paren != null && paren.isNotEmpty) {
+        _lastParenPattern = paren;
+      }
+      if (curly != null && curly.isNotEmpty) {
+        _lastCurlyPattern = curly;
+      }
+    });
+    if (finalize) {
+      _debugLogPatterns('stream-final');
+    }
+    _scrollToBottomDeferred();
+  }
+
+  bool _isMessageStreaming(ChatMessage message) {
+    return _streamingInProgress && message.id == _streamingMessageId;
+  }
+
   String _makeId() => '${DateTime.now().microsecondsSinceEpoch}-${_seq++}';
 
   void _scrollToBottomDeferred() {
@@ -105,17 +141,57 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _sendToAI() async {
     if (_loading) return;
+    final streamId = _makeId();
+    final buffer = StringBuffer();
     setState(() => _loading = true);
+    _streamingMessageId = streamId;
+    _streamingInProgress = true;
     try {
-      final reply = await _service.askWithHistory(_messages);
-      _appendAssistant(reply);
+      await for (final chunk in _service.askWithHistoryStream(_messages)) {
+        if (_streamingMessageId != streamId) {
+          _streamingInProgress = false;
+          return;
+        }
+        buffer.write(chunk);
+        _updateStreamingAssistant(streamId, buffer.toString());
+      }
+      if (_streamingMessageId == streamId) {
+        final text = buffer.toString();
+        if (text.trim().isEmpty) {
+          if (mounted) {
+            setState(() {
+              final idx = _messages.indexWhere((m) => m.id == streamId);
+              if (idx >= 0) {
+                _messages.removeAt(idx);
+              }
+            });
+          }
+        } else {
+          _updateStreamingAssistant(streamId, text, finalize: true);
+        }
+      }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('요청 실패: $e')),
-        );
+      if (_streamingMessageId == streamId) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('요청 실패: $e')),
+          );
+        }
+        if (mounted) {
+          setState(() {
+            final idx = _messages.indexWhere((m) => m.id == streamId);
+            if (idx >= 0) {
+              _messages.removeAt(idx);
+            }
+          });
+        }
+        _streamingInProgress = false;
       }
     } finally {
+      if (_streamingMessageId == streamId) {
+        _streamingMessageId = null;
+        _streamingInProgress = false;
+      }
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -424,12 +500,12 @@ class _ChatPageState extends State<ChatPage> {
                             color: isUser ? cs.primary : cs.surface,
                             textColor: isUser ? cs.onPrimary : Colors.black,
                           ),
-                          if (!isUser)
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: _ExampleCtaBox(
-                                onTap: () {
-                                  if (_examplesLoading) return;
+                      if (!isUser && !_isMessageStreaming(m))
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: _ExampleCtaBox(
+                            onTap: () {
+                              if (_examplesLoading) return;
                                   _openExampleDialog(m.content);
                                 },
                               ),
